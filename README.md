@@ -11,3 +11,5 @@ This project uses a dataset from the Google Play Store, which includes various f
 
 Communication:
 All components communicate through RabbitMQ for seamless data flow and interaction.
+
+![ADD](https://github.com/user-attachments/assets/8ed79d07-e2ba-4b86-8ad2-61c8c167cd94)
