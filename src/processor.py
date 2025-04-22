@@ -95,6 +95,9 @@ def send_to_uploader(file_path):
             auto_delete=False
         )
         
+
+        #name action
+        # processor-uploader-upload_cleaned
         message = {
             'action': 'upload_cleaned',
             'file_path': file_path,
