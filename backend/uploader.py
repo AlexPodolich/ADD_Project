@@ -19,6 +19,10 @@ DB_CONFIG = {
     'dbname': os.getenv("dbname")
 }
 
+# Check if DB_CONFIG is loaded (optional but helpful)
+if not all(DB_CONFIG.values()):
+    print("Warning: Database configuration missing in .env file. Uploader DB functions might fail.")
+
 CSV_FILE_PATH = "./data/google_play_store_dataset.csv"
 BATCH_SIZE = 1000  # Optimal batch size for performance
 
@@ -198,20 +202,31 @@ def process_message(ch, method, properties, body):
     try:
         message = json.loads(body)
         action = message.get('action')
-        file_path = message.get('file_path')
-        
-        print(f"Received message - Action: {action}, File path: {file_path}")
-        
+        data = message.get('data') # Expect data payload now
+
+        print(f"Received message - Action: {action}")
+
         if action == 'upload_raw':
             upload_raw_data()
         elif action == 'upload_cleaned':
-            upload_cleaned_data(file_path)
+            file_path = data.get('file_path') if isinstance(data, dict) else None
+            if file_path:
+                 upload_cleaned_data(file_path)
+            else:
+                print("Error: Missing 'file_path' in data for upload_cleaned action")
+        elif action == 'save_prediction':
+            if isinstance(data, dict):
+                print(f"Calling save_prediction with data: {data}")
+                save_prediction(data) # Call the renamed function
+            else:
+                print("Error: Invalid data format for save_prediction action")
         else:
-            print(f"Unknown action: {action}")
-        
+            print(f"Warning: Unknown action received: {action}")
+
         # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        
+        print(f"Acknowledged message for action: {action}")
+
     except Exception as e:
         print(f"Error processing message: {e}")
 
@@ -248,6 +263,55 @@ def start_listening():
         if connection and not connection.is_closed:
             connection.close()
             print("Connection closed")
+
+def save_prediction(prediction_data: dict):
+    """Saves prediction data to the prediction_history table using psycopg2."""
+    sql = """
+        INSERT INTO public.prediction_history (
+            category, size, type, price, content_rating,
+            genres, predicted_installs, predicted_reviews, predicted_rating
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, created_at;
+    """
+    conn = None
+    cursor = None
+    inserted_record = None
+
+    try:
+        conn = create_connection()
+        cursor = conn.cursor()
+
+        # Map frontend keys to DB columns and prepare values tuple
+        # Ensure the order matches the INSERT statement columns
+        values = (
+            prediction_data.get('category'),
+            prediction_data.get('app_size'), # Map app_size -> size
+            prediction_data.get('app_type'), # Map app_type -> type
+            str(prediction_data.get('price', '0')), # Ensure price is string
+            prediction_data.get('content_rating'),
+            prediction_data.get('genres'), # Use 'genres' from incoming data
+            prediction_data.get('predicted_installs'),
+            prediction_data.get('predicted_reviews'),
+            prediction_data.get('predicted_rating')
+        )
+
+        print(f"Executing SQL: {sql} with values: {values}")
+        cursor.execute(sql, values)
+        inserted_record = cursor.fetchone() # Fetch the returned id and created_at
+        conn.commit() # Commit the transaction
+        print(f"Successfully inserted prediction record. ID: {inserted_record[0] if inserted_record else 'N/A'}, Timestamp: {inserted_record[1] if inserted_record else 'N/A'}")
+        # You could return the inserted_record if needed elsewhere
+
+    except Exception as e:
+        print(f"Error saving prediction to PostgreSQL: {e}")
+        if conn:
+            conn.rollback() # Rollback on error
+        raise # Re-raise the exception
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     print("Starting uploader service...")
