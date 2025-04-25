@@ -159,19 +159,65 @@ def upload_cleaned_data(file_path):
     except Exception as e:
         print(f"Error uploading cleaned data: {e}")
 
+def upload_prediction(prediction_data):
+    """Upload prediction to the prediction_history table"""
+    print("Uploading prediction...")
+    try:
+        # Upload prediction to the database
+        conn = create_connection()
+        cursor = conn.cursor()
+
+        # Prepare insert query
+        insert_query = """
+            INSERT INTO prediction_history (
+                category, size, type, price, content_rating, genres,
+                predicted_rating, predicted_installs, predicted_reviews,
+                created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """
+
+        # Extract data from prediction
+        input_features = prediction_data['Input Features']
+        predictions = prediction_data['Predictions']
+        
+        prepared_row = (
+            input_features['Category'],
+            input_features['Size'],
+            input_features['Type'],
+            input_features['Price'],
+            input_features['Content Rating'],
+            input_features['Genres'],
+            predictions['Rating'],
+            predictions['Installs'],
+            predictions['Reviews']
+        )
+
+        # Insert data
+        cursor.execute(insert_query, prepared_row)
+        conn.commit()
+        print("Prediction uploaded successfully.")
+
+    except Exception as e:
+        print(f"Error uploading prediction: {e}")
+        raise
+
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
     try:
         message = json.loads(body)
         action = message.get('action')
-        file_path = message.get('file_path')
-
-        print(f"Received message - Action: {action}, File path: {file_path}")
+        
+        print(f"Received message - Action: {action}")
 
         if action == 'producer_uploader_sendRawData':
+            file_path = message.get('file_path')
             upload_raw_data(file_path)
         elif action == 'processor_uploader_upload_cleaned':
+            file_path = message.get('file_path')
             upload_cleaned_data(file_path)
+        elif action == 'aimodel_uploader_uploadprediction':
+            prediction_data = message.get('prediction_data')
+            upload_prediction(prediction_data)
         else:
             print(f"Unknown action: {action}")
 
