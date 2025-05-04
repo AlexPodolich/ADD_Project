@@ -131,7 +131,6 @@ def send_to_uploader(prediction_data):
         message = {
             'action': 'aimodel_uploader_uploadprediction',
             'prediction_data': prediction_data,
-            'timestamp': datetime.now().isoformat()
         }
 
         channel.basic_publish(
