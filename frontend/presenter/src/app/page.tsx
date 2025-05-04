@@ -43,55 +43,78 @@ export default function Home() {
   // State for history loading
   const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(true);
 
-  // --- UNCOMMENT History Fetching ---
-  
-  useEffect(() => {
-    const fetchHistory = async () => {
-      // Start loading
-      setIsHistoryLoading(true);
-      setError(null); // Clear previous errors
-      try {
-        const { data, error: fetchError } = await supabase
-          .from('prediction_history')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50); // Limit results
+  const fetchHistory = async () => {
+    setIsHistoryLoading(true);
+    setError(null); // Clear previous errors
+    try {
+      // Add 1 second delay
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      
+      const { data, error: fetchError } = await supabase
+        .from('prediction_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50); // Limit results
 
-        if (fetchError) {
-          console.error("Supabase fetch error:", fetchError);
-          throw new Error(fetchError.message || "Failed to fetch data from Supabase.");
-        }
-
-        // Map DB data (snake_case potentially) to frontend state
-        const mappedHistory = data?.map(item => ({
-            category: item.category,
-            app_size: item.size, // DB `size` -> frontend `app_size`
-            app_type: item.type, // DB `type` -> frontend `app_type`
-            price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0), // Handle potential null price
-            content_rating: item.content_rating,
-            genres: item.genres,
-            id: item.id,
-            predicted_installs: item.predicted_installs,
-            predicted_reviews: item.predicted_reviews,
-            predicted_rating: item.predicted_rating,
-            created_at: item.created_at,
-        })) || [];
-
-        setHistory(mappedHistory as PredictionResult[]);
-
-      } catch (err: any) {
-        console.error("Error fetching prediction history:", err);
-        setError(`Failed to load prediction history: ${err.message}`);
-        setHistory([]);
-      } finally {
-        // Finish loading
-        setIsHistoryLoading(false);
+      if (fetchError) {
+        console.error("Supabase fetch error:", fetchError);
+        throw new Error(fetchError.message || "Failed to fetch data from Supabase.");
       }
-    };
 
+      // Map DB data (snake_case potentially) to frontend state
+      const mappedHistory = data?.map(item => ({
+          category: item.category,
+          app_size: item.size, // DB `size` -> frontend `app_size`
+          app_type: item.type, // DB `type` -> frontend `app_type`
+          price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0), // Handle potential null price
+          content_rating: item.content_rating,
+          genres: item.genres,
+          id: item.id,
+          predicted_installs: item.predicted_installs,
+          predicted_reviews: item.predicted_reviews,
+          predicted_rating: item.predicted_rating,
+          created_at: item.created_at,
+      })) || [];
+      if (mappedHistory.length > 0) {
+        setLatestPrediction(mappedHistory[0]);
+      }
+      setHistory(mappedHistory as PredictionResult[]);
+
+    } catch (err: any) {
+      console.error("Error fetching prediction history:", err);
+      setError(`Failed to load prediction history: ${err.message}`);
+      setHistory([]);
+    } finally {
+      // Finish loading
+      setIsHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Set up real-time subscription
+    const subscription = supabase
+        .channel('prediction_changes')
+        .on('postgres_changes', 
+            {
+                event: '*',
+                schema: 'public',
+                table: 'prediction_history'
+            },
+            (payload) => {
+                // Fetch fresh data when changes occur
+                fetchHistory();
+            }
+        )
+        .subscribe();
+
+    // Initial fetch
     fetchHistory();
-  }, []); // Runs once on mount
-  
+
+    // Cleanup subscription
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, []);
 
   // Handler for input changes
   const handleInputChange = (
@@ -123,15 +146,14 @@ export default function Home() {
     setError(null);
 
     console.log("Sending data to backend:", inputData);
-
+   
     try {
-      // --- Step 5: Call Backend API ---
-      const response = await fetch('http://localhost:5001/predict', { // Target Flask API
+      const response = await fetch('http://localhost:5001/predict', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(inputData), // Send current form state
+        body: JSON.stringify(inputData),
       });
 
       if (!response.ok) {
@@ -139,22 +161,44 @@ export default function Home() {
           throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
       }
 
-      const predictionResult: PredictionResult = await response.json();
+      var predictionResult: PredictionResult = await response.json();
       console.log("Received prediction result from backend:", predictionResult);
 
-      // --- Step 4 & 6: Update UI State ---
-      // Add id and created_at if they are missing from backend response (for UI key/display)
-      // In a real scenario, the backend might return the saved record with these fields.
-      const resultForUI: PredictionResult = {
-          ...predictionResult,
-          id: predictionResult.id ?? Date.now(), // Use backend ID or temporary one
-          created_at: predictionResult.created_at ?? new Date().toISOString(), // Use backend timestamp or temporary one
-      };
+     
+      // Fetch fresh history data after prediction
+      // Add 1 second delay before showing prediction and fetching history
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { data: freshHistory, error: fetchError } = await supabase
+        .from('prediction_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-      setLatestPrediction(resultForUI);
-      // Add to history (prepend to show newest first)
-      // We add the result returned from the API, assuming it reflects what *should* be saved
-      setHistory(prevHistory => [resultForUI, ...prevHistory]);
+      if (fetchError) {
+        throw new Error(fetchError.message || "Failed to fetch updated history.");
+      }
+
+      // Map fresh history data
+      const mappedHistory = freshHistory?.map(item => ({
+        category: item.category,
+        app_size: item.size,
+        app_type: item.type,
+        price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0),
+        content_rating: item.content_rating,
+        genres: item.genres,
+        id: item.id,
+        predicted_installs: item.predicted_installs,
+        predicted_reviews: item.predicted_reviews,
+        predicted_rating: item.predicted_rating,
+        created_at: item.created_at,
+      })) || [];
+
+      
+      setHistory(mappedHistory as PredictionResult[]);
+     
+      if (mappedHistory.length > 0) {
+        setLatestPrediction(mappedHistory[0]);
+      }  // Set latest prediction after delay
 
     } catch (err: any) {
       console.error("Error during prediction processing:", err);
@@ -317,7 +361,7 @@ export default function Home() {
               <div><strong className="font-medium text-gray-600">Genres:</strong> {latestPrediction.genres}</div>
               <div><strong className="font-medium text-gray-600">Size:</strong> {latestPrediction.app_size}</div>
               <div><strong className="font-medium text-gray-600">Type:</strong> {latestPrediction.app_type}</div>
-              <div><strong className="font-medium text-gray-600">Price:</strong> ${latestPrediction.price.toFixed(2)}</div>
+              <div><strong className="font-medium text-gray-600">Price:</strong> {latestPrediction.price}</div>
               <div><strong className="font-medium text-gray-600">Content Rating:</strong> {latestPrediction.content_rating}</div>
             </div>
             <div className="mt-4 pt-4 border-t grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">

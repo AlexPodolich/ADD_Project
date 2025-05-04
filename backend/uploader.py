@@ -19,10 +19,6 @@ DB_CONFIG = {
     'dbname': os.getenv("dbname")
 }
 
-# Check if DB_CONFIG is loaded (optional but helpful)
-if not all(DB_CONFIG.values()):
-    print("Warning: Database configuration missing in .env file. Uploader DB functions might fail.")
-
 CSV_FILE_PATH = "./data/google_play_store_dataset.csv"
 BATCH_SIZE = 1000  # Optimal batch size for performance
 
@@ -36,22 +32,35 @@ def create_connection():
         print(f"Database connection failed: {e}")
         raise
 
-def upload_raw_data():
-    """Upload raw CSV data without any transformations"""
-    conn = None
-    cursor = None
-    total_rows = 0
-    
+def upload_raw_data(file_path):
+    """Upload raw data to the database based on the file path"""
+    print("Uploading raw data...")
     try:
+        # Debug: Print the file path
+        print("Received file path:", file_path)
+
+        # Check if file path is empty
+        if not file_path.strip():
+            print("Received empty file path. Skipping processing.")
+            return
+
+        # Read CSV file into DataFrame
+        df = pd.read_csv(file_path)
+
+        if df.empty:
+            print("Received file is valid but results in an empty DataFrame. Skipping processing.")
+            return
+
+        # Upload raw data to the database
         conn = create_connection()
         cursor = conn.cursor()
-        
-        # 1. Clear existing data
+
+        # Clear existing data
         print("Clearing existing data...")
         cursor.execute("TRUNCATE TABLE raw_apps RESTART IDENTITY")
         conn.commit()
-        
-        # 2. Prepare insert query
+
+        # Prepare insert query
         insert_query = """
             INSERT INTO raw_apps (
                 app, category, rating, reviews, size, installs, type,
@@ -59,81 +68,68 @@ def upload_raw_data():
                 current_ver, android_ver
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        
-        print("Starting CSV data upload...")
+
+        # Insert data into the database
         batch = []
-        
-        # 3. Process CSV file
-        with open(CSV_FILE_PATH, encoding="utf-8-sig") as csvfile:
-            reader = csv.DictReader(csvfile)
-            
-            for row in reader:
-                total_rows += 1
-                
-                # Prepare raw data exactly as-is from CSV
-                prepared_row = (
-                    row['App'],
-                    row['Category'],
-                    row['Rating'],
-                    row['Reviews'],
-                    row['Size'],
-                    row['Installs'],
-                    row['Type'],
-                    row['Price'],
-                    row['Content Rating'],
-                    row['Genres'],
-                    row['Last Updated'],
-                    row['Current Ver'],
-                    row['Android Ver']
-                )
-                
-                batch.append(prepared_row)
-                
-                # Insert batch when full
-                if len(batch) >= BATCH_SIZE:
-                    execute_batch(cursor, insert_query, batch)
-                    conn.commit()
-                    batch = []
-                    print(f"Processed {total_rows} rows...")
-            
-            # Insert remaining rows
-            if batch:
+        total_rows = 0
+        for index, row in df.iterrows():
+            prepared_row = (
+                row['App'], row['Category'], row['Rating'], row['Reviews'],
+                row['Size'], row['Installs'], row['Type'], row['Price'],
+                row['Content Rating'], row['Genres'], row['Last Updated'],
+                row['Current Ver'], row['Android Ver']
+            )
+            batch.append(prepared_row)
+            total_rows += 1
+
+            # Insert batch when full
+            if len(batch) >= BATCH_SIZE:
                 execute_batch(cursor, insert_query, batch)
                 conn.commit()
-        
-        print("Data upload completed successfully")
-        
-    except Exception as e:
-        print(f"Upload failed: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-    
-    print(f"\nTotal rows processed: {total_rows}")
+                batch = []
+                print(f"Uploaded {total_rows} rows so far...")
 
+        # Insert remaining rows
+        if batch:
+            execute_batch(cursor, insert_query, batch)
+            conn.commit()
+            print(f"Uploaded {total_rows} rows so far...")
+
+        print("Raw data uploaded successfully.")
+
+    except pd.errors.EmptyDataError:
+        print("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
+    except Exception as e:
+        print(f"Error uploading raw data: {e}")
 
 def upload_cleaned_data(file_path):
-    """Upload cleaned CSV data to the database"""
-    conn = None
-    cursor = None
-    total_rows = 0
-    
+    """Upload cleaned data to the database based on the file path"""
+    print("Uploading cleaned data...")
     try:
+        # Debug: Print the file path
+        print("Received file path:", file_path)
+
+        # Check if file path is empty
+        if not file_path.strip():
+            print("Received empty file path. Skipping processing.")
+            return
+
+        # Read CSV file into DataFrame
+        df = pd.read_csv(file_path)
+
+        if df.empty:
+            print("Received file is valid but results in an empty DataFrame. Skipping processing.")
+            return
+
+        # Upload cleaned data to the database
         conn = create_connection()
         cursor = conn.cursor()
-        
+
         # Clear existing data
         print("Clearing existing data from cleaned_apps table...")
         cursor.execute("TRUNCATE TABLE cleaned_apps RESTART IDENTITY")
         conn.commit()
-        
-        # Read the cleaned CSV file
-        df = pd.read_csv(file_path)
-        
+
         # Prepare insert query
         insert_query = """
             INSERT INTO cleaned_apps (
@@ -142,90 +138,93 @@ def upload_cleaned_data(file_path):
                 current_ver, android_ver
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        
-        print("Starting cleaned data upload...")
+
+        # Insert data into the database
         batch = []
-        
-        # Process DataFrame rows
         for _, row in df.iterrows():
-            total_rows += 1
-            
-            # Convert genres list back to string if needed
-            genres = ';'.join(row['Genres']) if isinstance(row['Genres'], list) else row['Genres']
-            
             prepared_row = (
-                row['App'],
-                row['Category'],
-                row['Rating'],
-                row['Reviews'],
-                row['Size'],
-                row['Installs'],
-                row['Type'],
-                row['Price'],
-                row['Content Rating'],
-                genres,
-                row['Last Updated'],
-                row['Current Ver'],
-                row['Android Ver']
+                row['App'], row['Category'], row['Rating'], row['Reviews'],
+                row['Size'], row['Installs'], row['Type'], row['Price'],
+                row['Content Rating'], row['Genres'], row['Last Updated'],
+                row['Current Ver'], row['Android Ver']
             )
-            
             batch.append(prepared_row)
-            
-            # Insert batch when full
-            if len(batch) >= BATCH_SIZE:
-                execute_batch(cursor, insert_query, batch)
-                conn.commit()
-                batch = []
-                print(f"Processed {total_rows} rows...")
-        
-        # Insert remaining rows
-        if batch:
-            execute_batch(cursor, insert_query, batch)
-            conn.commit()
-        
-        print("Cleaned data upload completed successfully")
-        
+
+        execute_batch(cursor, insert_query, batch)
+        conn.commit()
+        print("Cleaned data uploaded successfully.")
+
+    except pd.errors.EmptyDataError:
+        print("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
     except Exception as e:
-        print(f"Upload failed: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-    
-    print(f"\nTotal rows processed: {total_rows}")
+        print(f"Error uploading cleaned data: {e}")
+
+def upload_prediction(prediction_data):
+    """Upload prediction to the prediction_history table"""
+    print("Uploading prediction...")
+    try:
+        # Upload prediction to the database
+        conn = create_connection()
+        cursor = conn.cursor()
+
+        # Prepare insert query
+        insert_query = """
+            INSERT INTO prediction_history (
+                category, size, type, price, content_rating, genres,
+                predicted_rating, predicted_installs, predicted_reviews,
+                created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """
+
+        # Extract data from prediction
+        input_features = prediction_data['Input Features']
+        predictions = prediction_data['Predictions']
+        
+        print("Input Features:", input_features)
+        print("Predictions:", predictions)
+        prepared_row = (
+            input_features['category'],
+            input_features['app_size'],
+            input_features['app_type'],
+            input_features['price'],
+            input_features['content_rating'],
+            input_features['genres'],
+            predictions['Rating'],
+            predictions['Installs'],
+            predictions['Reviews']
+        )
+
+        # Insert data
+        cursor.execute(insert_query, prepared_row)
+        conn.commit()
+        print("Prediction uploaded successfully.")
+
+    except Exception as e:
+        print(f"Error uploading prediction: {e}")
+        raise
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
     try:
         message = json.loads(body)
         action = message.get('action')
-        data = message.get('data') # Expect data payload now
-
+        
         print(f"Received message - Action: {action}")
 
-        if action == 'upload_raw':
-            upload_raw_data()
-        elif action == 'upload_cleaned':
-            file_path = data.get('file_path') if isinstance(data, dict) else None
-            if file_path:
-                 upload_cleaned_data(file_path)
-            else:
-                print("Error: Missing 'file_path' in data for upload_cleaned action")
-        elif action == 'save_prediction':
-            if isinstance(data, dict):
-                print(f"Calling save_prediction with data: {data}")
-                save_prediction(data) # Call the renamed function
-            else:
-                print("Error: Invalid data format for save_prediction action")
+        if action == 'producer_uploader_sendRawData':
+            file_path = message.get('file_path')
+            upload_raw_data(file_path)
+        elif action == 'processor_uploader_upload_cleaned':
+            file_path = message.get('file_path')
+            upload_cleaned_data(file_path)
+        elif action == 'aimodel_uploader_uploadprediction':
+            prediction_data = message.get('prediction_data')
+            upload_prediction(prediction_data)
         else:
-            print(f"Warning: Unknown action received: {action}")
+            print(f"Unknown action: {action}")
 
         # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        print(f"Acknowledged message for action: {action}")
 
     except Exception as e:
         print(f"Error processing message: {e}")
@@ -263,55 +262,6 @@ def start_listening():
         if connection and not connection.is_closed:
             connection.close()
             print("Connection closed")
-
-def save_prediction(prediction_data: dict):
-    """Saves prediction data to the prediction_history table using psycopg2."""
-    sql = """
-        INSERT INTO public.prediction_history (
-            category, size, type, price, content_rating,
-            genres, predicted_installs, predicted_reviews, predicted_rating
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, created_at;
-    """
-    conn = None
-    cursor = None
-    inserted_record = None
-
-    try:
-        conn = create_connection()
-        cursor = conn.cursor()
-
-        # Map frontend keys to DB columns and prepare values tuple
-        # Ensure the order matches the INSERT statement columns
-        values = (
-            prediction_data.get('category'),
-            prediction_data.get('app_size'), # Map app_size -> size
-            prediction_data.get('app_type'), # Map app_type -> type
-            str(prediction_data.get('price', '0')), # Ensure price is string
-            prediction_data.get('content_rating'),
-            prediction_data.get('genres'), # Use 'genres' from incoming data
-            prediction_data.get('predicted_installs'),
-            prediction_data.get('predicted_reviews'),
-            prediction_data.get('predicted_rating')
-        )
-
-        print(f"Executing SQL: {sql} with values: {values}")
-        cursor.execute(sql, values)
-        inserted_record = cursor.fetchone() # Fetch the returned id and created_at
-        conn.commit() # Commit the transaction
-        print(f"Successfully inserted prediction record. ID: {inserted_record[0] if inserted_record else 'N/A'}, Timestamp: {inserted_record[1] if inserted_record else 'N/A'}")
-        # You could return the inserted_record if needed elsewhere
-
-    except Exception as e:
-        print(f"Error saving prediction to PostgreSQL: {e}")
-        if conn:
-            conn.rollback() # Rollback on error
-        raise # Re-raise the exception
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 if __name__ == "__main__":
     print("Starting uploader service...")
