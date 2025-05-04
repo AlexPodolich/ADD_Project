@@ -3,4 +3,3 @@ numpy
 python-dotenv
 psycopg2-binary
 pika
-scikit-learn
