@@ -3,6 +3,17 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+const CATEGORIES = [
+  "Game", "Communication", "Social", "Tools", "Entertainment", 
+  "Productivity", "Education", "Shopping", "Health and fitness", "Finance"
+];
+
+const GENRES = [
+  "Education", "Action & Adventure", "Casual", "Puzzle", "Entertainment", 
+  "Role Playing", "Simulation", "Arcade", "Strategy", "Music & Video", 
+  "Brain Games", "Art & Design", "Card", "Video Players & Editors", "Creativity"
+];
+
 // Define interfaces for input and result data
 interface PredictionInput {
   category: string;
@@ -24,12 +35,12 @@ interface PredictionResult extends PredictionInput {
 export default function Home() {
   // State for form inputs
   const [inputData, setInputData] = useState<PredictionInput>({
-    category: '',
+    category: CATEGORIES[0],
     app_size: '',
     app_type: 'Free',
     price: 0,
     content_rating: 'Everyone',
-    genres: '',
+    genres: GENRES[0],
   });
 
   // State for the most recent prediction result
@@ -121,21 +132,31 @@ export default function Home() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    let processedValue: string | number = value;
 
-    if (name === 'price') {
-      processedValue = parseFloat(value) || 0;
-    }
-    if (name === 'app_type' && value === 'Free') {
-        // Reset price to 0 when Type becomes Free
-         setInputData(prevData => ({ ...prevData, price: 0, [name]: value }));
-         return; // Exit early as state is set
-    }
+    setInputData(prevData => {
+      const updatedData = { ...prevData }; 
 
-    setInputData((prevData) => ({
-      ...prevData,
-      [name]: processedValue,
-    }));
+      if (name === 'category') {
+        updatedData.category = value;
+      } else if (name === 'genres') {
+        updatedData.genres = value;
+      } else if (name === 'app_size') {
+        updatedData.app_size = value.replace(/[^0-9]/g, '');
+      } else if (name === 'price') {
+        if (prevData.app_type === 'Paid') {
+          updatedData.price = parseFloat(value) || 0;
+        }
+      } else if (name === 'app_type') {
+        updatedData.app_type = value as 'Free' | 'Paid';
+        if (updatedData.app_type === 'Free') {
+          updatedData.price = 0; 
+        }
+      } else if (name === 'content_rating') {
+        updatedData.content_rating = value as typeof prevData.content_rating;
+      }
+      
+      return updatedData;
+    });
   };
 
   // Handler for form submission
@@ -222,48 +243,56 @@ export default function Home() {
               <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
                 Category <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
+              <select
                 name="category"
                 id="category"
                 value={inputData.category}
                 onChange={handleInputChange}
                 required
-                placeholder="e.g., GAME, PRODUCTIVITY"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out text-gray-900"
-              />
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white transition duration-150 ease-in-out appearance-none text-gray-900"
+              >
+                {CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Genre Input - Changed name to 'genres' */}
+            {/* Genre Input */}
             <div>
               <label htmlFor="genres" className="block text-sm font-medium text-gray-700 mb-1">
                 Genres <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
+              <select
                 name="genres"
                 id="genres"
                 value={inputData.genres}
                 onChange={handleInputChange}
                 required
-                placeholder="e.g., Action;Puzzle;Finance"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out text-gray-900"
-              />
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white transition duration-150 ease-in-out appearance-none text-gray-900"
+              >
+                {GENRES.map(genre => (
+                  <option key={genre} value={genre}>{genre}</option>
+                ))}
+              </select>
             </div>
 
             {/* App Size Input */}
             <div>
               <label htmlFor="app_size" className="block text-sm font-medium text-gray-700 mb-1">
-                App Size <span className="text-red-500">*</span>
+                App Size[MB] <span className="text-red-500">*</span>
               </label>
               <input
-                type="text"
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 name="app_size"
                 id="app_size"
                 value={inputData.app_size}
                 onChange={handleInputChange}
+                min="0"
+                step="1"
                 required
-                placeholder="e.g., 15M, Varies with device"
+                placeholder="e.g 10, 150, 1200"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out text-gray-900"
               />
             </div>
@@ -359,23 +388,23 @@ export default function Home() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-gray-800">
               <div><strong className="font-medium text-gray-600">Category:</strong> {latestPrediction.category}</div>
               <div><strong className="font-medium text-gray-600">Genres:</strong> {latestPrediction.genres}</div>
-              <div><strong className="font-medium text-gray-600">Size:</strong> {latestPrediction.app_size}</div>
+              <div><strong className="font-medium text-gray-600">Size:</strong> {latestPrediction.app_size} MB</div>
               <div><strong className="font-medium text-gray-600">Type:</strong> {latestPrediction.app_type}</div>
-              <div><strong className="font-medium text-gray-600">Price:</strong> {latestPrediction.price}</div>
+              <div><strong className="font-medium text-gray-600">Price:</strong> {latestPrediction.price} $</div>
               <div><strong className="font-medium text-gray-600">Content Rating:</strong> {latestPrediction.content_rating}</div>
             </div>
             <div className="mt-4 pt-4 border-t grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                 <div className="bg-indigo-50 p-3 rounded">
                     <p className="text-xs text-indigo-700 font-semibold uppercase tracking-wide">Predicted Rating</p>
-                    <p className="text-lg font-bold text-indigo-900">{latestPrediction.predicted_rating}</p>
+                    <p className="text-lg font-bold text-indigo-900">{parseFloat(latestPrediction.predicted_rating).toFixed(1)}/5</p>
                 </div>
                  <div className="bg-indigo-50 p-3 rounded">
                     <p className="text-xs text-indigo-700 font-semibold uppercase tracking-wide">Predicted Installs</p>
-                    <p className="text-lg font-bold text-indigo-900">{latestPrediction.predicted_installs}</p>
+                    <p className="text-lg font-bold text-indigo-900">~{latestPrediction.predicted_installs}</p>
                 </div>
                  <div className="bg-indigo-50 p-3 rounded">
                     <p className="text-xs text-indigo-700 font-semibold uppercase tracking-wide">Predicted Reviews</p>
-                    <p className="text-lg font-bold text-indigo-900">{latestPrediction.predicted_reviews}</p>
+                    <p className="text-lg font-bold text-indigo-900">~{latestPrediction.predicted_reviews}</p>
                 </div>
             </div>
           </div>
@@ -396,15 +425,37 @@ export default function Home() {
               {history.map((item) => (
                  <div key={item.id ?? Math.random()} className="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
                    <p className="text-xs text-gray-500 mb-2">{item.created_at ? new Date(item.created_at).toLocaleString() : 'Date unavailable'}</p>
-                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1 text-sm text-gray-800">
-                       <div><strong className="font-medium text-gray-600">Category:</strong> {item.category}</div>
-                       <div><strong className="font-medium text-gray-600">Genres:</strong> {item.genres}</div>
-                       {/* Display app_size, app_type from state */} 
-                       <div><strong className="font-medium text-gray-600">Size:</strong> {item.app_size}</div> 
-                       <div><strong className="font-medium text-gray-600">Type:</strong> {item.app_type}</div>
-                       <div className="font-semibold text-indigo-700"><strong className="font-medium text-indigo-600">Rating:</strong> {item.predicted_rating}</div>
-                       <div className="font-semibold text-indigo-700"><strong className="font-medium text-indigo-600">Installs:</strong> {item.predicted_installs}</div>
-                       <div className="font-semibold text-indigo-700"><strong className="font-medium text-indigo-600">Reviews:</strong> {item.predicted_reviews}</div>
+                   {/* Main container for the columnar layout of details */}
+                   <div className="flex flex-wrap justify-around items-start w-full gap-x-2 gap-y-2 text-sm">
+                       {/* Column 1: Category & Rating */}
+                       <div className="flex flex-col items-start">
+                           <div className="text-gray-800"><strong className="font-medium text-gray-600">Category:</strong> <span>{item.category}</span></div>
+                           <div className="mt-1 text-indigo-700"><strong className="font-medium text-indigo-600">Rating:</strong> <span className="font-semibold">{parseFloat(item.predicted_rating).toFixed(1)}/5.0</span></div>
+                       </div>
+
+                       {/* Column 2: Genres & Installs */}
+                       <div className="flex flex-col items-start">
+                           <div className="text-gray-800"><strong className="font-medium text-gray-600">Genres:</strong> <span>{item.genres}</span></div>
+                           <div className="mt-1 text-indigo-700"><strong className="font-medium text-indigo-600">Installs:</strong> <span className="font-semibold">~{item.predicted_installs}</span></div>
+                       </div>
+
+                       {/* Column 3: Size & Reviews */}
+                       <div className="flex flex-col items-start">
+                           <div className="text-gray-800"><strong className="font-medium text-gray-600">Size:</strong> <span>{item.app_size} MB</span></div>
+                           <div className="mt-1 text-indigo-700"><strong className="font-medium text-indigo-600">Reviews:</strong> <span className="font-semibold">~{item.predicted_reviews}</span></div>
+                       </div>
+
+                       {/* Column 4: Type */}
+                       <div className="flex flex-col items-start">
+                           <div className="text-gray-800"><strong className="font-medium text-gray-600">Type:</strong> <span>{item.app_type}</span></div>
+                           <div className="mt-1">&nbsp;</div> {/* Placeholder for alignment */}
+                       </div>
+
+                       {/* Column 5: Price */}
+                       <div className="flex flex-col items-start">
+                           <div className="text-gray-800"><strong className="font-medium text-gray-600">Price:</strong> <span>{item.price} $</span></div>
+                           <div className="mt-1">&nbsp;</div> {/* Placeholder for alignment */}
+                       </div>
                    </div>
                  </div>
               ))}
