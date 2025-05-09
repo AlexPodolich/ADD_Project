@@ -335,7 +335,7 @@ export default function Home() {
               </select>
             </div>
 
-            {/* Price Input (conditional styling/disabling) */}
+            {/* Price Input */}
             <div>
               <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">
                 Price ($)
@@ -448,13 +448,13 @@ export default function Home() {
                        {/* Column 4: Type */}
                        <div className="flex flex-col items-start">
                            <div className="text-gray-800"><strong className="font-medium text-gray-600">Type:</strong> <span>{item.app_type}</span></div>
-                           <div className="mt-1">&nbsp;</div> {/* Placeholder for alignment */}
+                           <div className="mt-1">&nbsp;</div> {}
                        </div>
 
                        {/* Column 5: Price */}
                        <div className="flex flex-col items-start">
                            <div className="text-gray-800"><strong className="font-medium text-gray-600">Price:</strong> <span>{item.price} $</span></div>
-                           <div className="mt-1">&nbsp;</div> {/* Placeholder for alignment */}
+                           <div className="mt-1">&nbsp;</div> {}
                        </div>
                    </div>
                  </div>
@@ -466,22 +466,3 @@ export default function Home() {
     </main>
   );
 }
-
-// Basic fade-in animation (add to globals.css or here in style jsx)
-// You might need to configure Tailwind for animations
-// Example for globals.css:
-/*
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer utilities {
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-out forwards;
-  }
-}
-*/
