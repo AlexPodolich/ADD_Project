@@ -1,14 +1,17 @@
+
+
 import os
-import csv
 import json
 import pika
-from datetime import datetime
+from backend.dictionary import QueueName, Action, DataColumn
+import argparse
 
 # File path for the dataset
-CSV_FILE_PATH = './data/google_play_store_dataset.csv'
+from backend.dictionary import FilePath
+CSV_FILE_PATH = FilePath.DATASET.value
 
-def send_to_uploader(file_path):
-    """Send the dataset file path to the uploader via RabbitMQ"""
+def send_data_uploader_processor(file_path):
+    """Send the dataset file path to both the uploader and processor via RabbitMQ"""
     try:
         print("Producer connecting to RabbitMQ...")
         connection = pika.BlockingConnection(
@@ -16,51 +19,44 @@ def send_to_uploader(file_path):
         )
         channel = connection.channel()
 
-        # Declare queue for uploader
-        channel.queue_declare(queue='upload_queue', durable=False, auto_delete=False)
+        # Message for uploader
+        uploader_message = {
+            Action.PRODUCER_UPLOADER_SEND_RAW.name.lower(): Action.PRODUCER_UPLOADER_SEND_RAW.value,
+            DataColumn.FILE_PATH.value: file_path
+        }
 
-        # Send file path to uploader
+        from backend.dictionary import Exchange
         channel.basic_publish(
-            exchange='',
-            routing_key='upload_queue',
-            body=json.dumps({'action': 'producer_uploader_sendRawData', 'file_path': file_path})
+            exchange=Exchange.ADD_DIRECT.value,
+            routing_key=QueueName.UPLOAD.value,
+            body=json.dumps(uploader_message)
         )
         print("File path sent to uploader queue.")
 
-        connection.close()
-    except Exception as e:
-        print(f"Failed to send file path to uploader queue: {e}")
-        raise
-
-def send_to_processor(file_path):
-    """Send the dataset file path to the processor via RabbitMQ"""
-    try:
-        print("Producer connecting to RabbitMQ...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='localhost', heartbeat=600, blocked_connection_timeout=300)
-        )
-        channel = connection.channel()
-
-        # Declare queue for processor
-        channel.queue_declare(queue='process_queue', durable=False, auto_delete=False)
-
-        # Send file path to processor
+        # Message for processor
+        processor_message = {
+            Action.PRODUCER_PROCESSOR_SEND_RAW.name.lower(): Action.PRODUCER_PROCESSOR_SEND_RAW.value,
+            DataColumn.FILE_PATH.value: file_path
+        }
         channel.basic_publish(
-            exchange='',
-            routing_key='process_queue',
-            body=json.dumps({'action': 'producer_processor_sendRawData', 'file_path': file_path})
+            exchange=Exchange.ADD_DIRECT.value,
+            routing_key=QueueName.PROCESS.value,
+            body=json.dumps(processor_message)
         )
         print("File path sent to processor queue.")
 
         connection.close()
     except Exception as e:
-        print(f"Failed to send file path to processor queue: {e}")
+        print(f"Failed to send file path to uploader or processor queue: {e}")
         raise
 
 if __name__ == "__main__":
-    if os.path.exists(CSV_FILE_PATH):
-        print(f"Dataset found at {CSV_FILE_PATH}. Sending to uploader and processor...")
-        send_to_uploader(CSV_FILE_PATH)
-        send_to_processor(CSV_FILE_PATH)
+    parser = argparse.ArgumentParser(description="Send dataset file path to uploader and processor queues.")
+    parser.add_argument('--file', type=str, default=CSV_FILE_PATH, help='Path to the dataset file (default: from FilePath enum)')
+    args = parser.parse_args()
+    file_path = args.file
+    if os.path.exists(file_path):
+        print(f"Dataset found at {file_path}. Sending to uploader and processor...")
+        send_data_uploader_processor(file_path)
     else:
-        print(f"Dataset file not found at {CSV_FILE_PATH}. Please check the file path.")
+        print(f"Dataset file not found at {file_path}. Please check the file path.")

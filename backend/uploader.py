@@ -1,4 +1,6 @@
-import csv
+
+
+
 import psycopg2
 from dotenv import load_dotenv
 import os
@@ -6,6 +8,8 @@ import json
 import pandas as pd
 import pika
 from psycopg2.extras import execute_batch
+from backend.dictionary import QueueName, Action, DataColumn, DbColumn, PredictionColumn
+
 
 # Load environment variables
 load_dotenv()
@@ -19,7 +23,6 @@ DB_CONFIG = {
     'dbname': os.getenv("dbname")
 }
 
-CSV_FILE_PATH = "./data/google_play_store_dataset.csv"
 BATCH_SIZE = 1000  # Optimal batch size for performance
 
 def create_connection():
@@ -72,12 +75,22 @@ def upload_raw_data(file_path):
         # Insert data into the database
         batch = []
         total_rows = 0
+
         for index, row in df.iterrows():
             prepared_row = (
-                row['App'], row['Category'], row['Rating'], row['Reviews'],
-                row['Size'], row['Installs'], row['Type'], row['Price'],
-                row['Content Rating'], row['Genres'], row['Last Updated'],
-                row['Current Ver'], row['Android Ver']
+                row[DataColumn.APP.value],
+                row[DataColumn.CATEGORY.value],
+                row[DataColumn.RATING.value],
+                row[DataColumn.REVIEWS.value],
+                row[DataColumn.SIZE.value],
+                row[DataColumn.INSTALLS.value],
+                row[DataColumn.TYPE.value],
+                row[DataColumn.PRICE.value],
+                row[DataColumn.CONTENT_RATING.value],
+                row[DataColumn.GENRES.value],
+                row[DataColumn.LAST_UPDATED.value],
+                row[DataColumn.CURRENT_VER.value],
+                row[DataColumn.ANDROID_VER.value]
             )
             batch.append(prepared_row)
             total_rows += 1
@@ -141,12 +154,22 @@ def upload_cleaned_data(file_path):
 
         # Insert data into the database
         batch = []
+
         for _, row in df.iterrows():
             prepared_row = (
-                row['App'], row['Category'], row['Rating'], row['Reviews'],
-                row['Size'], row['Installs'], row['Type'], row['Price'],
-                row['Content Rating'], row['Genres'], row['Last Updated'],
-                row['Current Ver'], row['Android Ver']
+                row[DataColumn.APP.value],
+                row[DataColumn.CATEGORY.value],
+                row[DataColumn.RATING.value],
+                row[DataColumn.REVIEWS.value],
+                row[DataColumn.SIZE.value],
+                row[DataColumn.INSTALLS.value],
+                row[DataColumn.TYPE.value],
+                row[DataColumn.PRICE.value],
+                row[DataColumn.CONTENT_RATING.value],
+                row[DataColumn.GENRES.value],
+                row[DataColumn.LAST_UPDATED.value],
+                row[DataColumn.CURRENT_VER.value],
+                row[DataColumn.ANDROID_VER.value]
             )
             batch.append(prepared_row)
 
@@ -183,15 +206,15 @@ def upload_prediction(prediction_data):
         print("Input Features:", input_features)
         print("Predictions:", predictions)
         prepared_row = (
-            input_features['category'],
-            input_features['app_size'],
-            input_features['app_type'],
-            input_features['price'],
-            input_features['content_rating'],
-            input_features['genres'],
-            predictions['Rating'],
-            predictions['Installs'],
-            predictions['Reviews']
+            input_features[PredictionColumn.CATEGORY.value],
+            input_features[PredictionColumn.SIZE.value],
+            input_features[PredictionColumn.TYPE.value],
+            input_features[PredictionColumn.PRICE.value],
+            input_features[PredictionColumn.CONTENT_RATING.value],
+            input_features[PredictionColumn.GENRES.value],
+            predictions[PredictionColumn.RATING.value],
+            predictions[PredictionColumn.INSTALLS.value],
+            predictions[PredictionColumn.REVIEWS.value]
         )
 
         # Insert data
@@ -211,14 +234,14 @@ def process_message(ch, method, properties, body):
         
         print(f"Received message - Action: {action}")
 
-        if action == 'producer_uploader_sendRawData':
-            file_path = message.get('file_path')
+        if action == Action.PRODUCER_UPLOADER_SEND_RAW.value:
+            file_path = message.get(DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path')
             upload_raw_data(file_path)
-        elif action == 'processor_uploader_upload_cleaned':
-            file_path = message.get('file_path')
+        elif action == Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value:
+            file_path = message.get(DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path')
             upload_cleaned_data(file_path)
-        elif action == 'aimodel_uploader_uploadprediction':
-            prediction_data = message.get('prediction_data')
+        elif action == Action.AIMODEL_UPLOADER_UPLOAD_PREDICTION.value:
+            prediction_data = message.get(PredictionColumn.PREDICTION_DATA.value if hasattr(PredictionColumn, 'PREDICTION_DATA') else 'prediction_data')
             upload_prediction(prediction_data)
         else:
             print(f"Unknown action: {action}")
@@ -240,13 +263,13 @@ def start_listening():
         channel = connection.channel()
         
         # Declare queue
-        channel.queue_declare(queue='upload_queue')
+        channel.queue_declare(queue=QueueName.UPLOAD.value)
         
         print("Uploader service is listening for messages...")
         
         # Set up consumer
         channel.basic_consume(
-            queue='upload_queue',
+            queue=QueueName.UPLOAD.value,
             on_message_callback=process_message
         )
         
