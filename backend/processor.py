@@ -38,37 +38,6 @@ def send_to_uploader(file_path):
         print(f"Failed to send message to RabbitMQ: {e}")
         raise
 
-def send_to_aimodel(file_path):
-    """Send cleaned data file path to aimodel via RabbitMQ"""
-    try:
-        print("Trying to send message to RabbitMQ for aimodel...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
-            )
-        )
-        channel = connection.channel()
-
-        # Declare queue with consistent settings
-        message = {
-            'action': Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value,
-            'file_path': file_path,
-            'timestamp': datetime.now().isoformat()
-        }
-        channel.basic_publish(
-            exchange='',
-            routing_key=QueueName.AI_MODEL.value,
-            body=json.dumps(message)
-        )
-
-        print("Cleaned data training command sent to aimodel")
-        connection.close()
-
-    except Exception as e:
-        print(f"Failed to send message to RabbitMQ for aimodel: {e}")
-        raise
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -156,8 +125,7 @@ def process_data(file_path):
         # Send to uploader via RabbitMQ
         send_to_uploader(output_path)
 
-        # Send to aimodel via RabbitMQ
-        send_to_aimodel(output_path)
+
 
     except Exception as e:
         print(f"Error processing data: {e}")
