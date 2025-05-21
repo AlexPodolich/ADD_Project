@@ -3,4 +3,7 @@ numpy
 python-dotenv
 psycopg2-binary
 pika
+Flask>=2.0
+supabase>=1.0,<2.0 # Pin Supabase version for stability
+Flask-Cors>=3.0
 scikit-learn
