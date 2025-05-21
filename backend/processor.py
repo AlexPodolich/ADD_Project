@@ -1,9 +1,8 @@
-import os
 import pandas as pd
-import numpy as np
 from datetime import datetime
 import pika
 import json
+from .dictionary import QueueName, Action
 
 
 
@@ -21,21 +20,14 @@ def send_to_uploader(file_path):
         channel = connection.channel()
         
         # Declare queue with consistent settings
-        channel.queue_declare(
-            queue='upload_queue',
-            durable=False,  # Changed to match uploader
-            auto_delete=False
-        )
-        
         message = {
-            'action': 'processor_uploader_upload_cleaned',
+            'action': Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value,
             'file_path': file_path,
             'timestamp': datetime.now().isoformat()
         }
-        
         channel.basic_publish(
             exchange='',
-            routing_key='upload_queue',
+            routing_key=QueueName.UPLOAD.value,
             body=json.dumps(message)
         )
         
@@ -60,21 +52,14 @@ def send_to_aimodel(file_path):
         channel = connection.channel()
 
         # Declare queue with consistent settings
-        channel.queue_declare(
-            queue='ai_model_queue',
-            durable=False,
-            auto_delete=False
-        )
-
         message = {
-            'action': 'processor_aimodel_trainmodel',
+            'action': Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value,
             'file_path': file_path,
             'timestamp': datetime.now().isoformat()
         }
-
         channel.basic_publish(
             exchange='',
-            routing_key='ai_model_queue',
+            routing_key=QueueName.AI_MODEL.value,
             body=json.dumps(message)
         )
 
@@ -94,7 +79,7 @@ def process_message(ch, method, properties, body):
 
         print(f"Received message - Action: {action}, File path: {file_path}")
 
-        if action == 'producer_processor_sendRawData':
+        if action == Action.PRODUCER_PROCESSOR_SEND_RAW.value:
             process_data(file_path)
         else:
             print(f"Unknown action: {action}")
@@ -199,7 +184,7 @@ def start_listening():
 
         # Set up consumer
         channel.basic_consume(
-            queue='process_queue',
+            queue=QueueName.PROCESS.value,
             on_message_callback=process_message
         )
 

@@ -1,33 +1,24 @@
+
+import os
+import json
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.ensemble import RandomForestRegressor
 import pickle
-import os
-import json
-import pika
-from datetime import datetime
-import os
-import json
 import pika
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import logging
-import random
+from .dictionary import QueueName, Action
 
 logging.basicConfig(level=logging.INFO)
-
-# Load .env variables (primarily for potential RabbitMQ connection details if not localhost)
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=dotenv_path)
-
 app = Flask(__name__)
-# Allow requests from our frontend development server
 CORS(app, origins=["http://localhost:3000", "http://localhost:6543"]) # Adjust port if needed
-
-# RabbitMQ Configuration (assuming localhost default)
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 UPLOAD_QUEUE = 'upload_queue'
 
@@ -108,21 +99,16 @@ def send_to_uploader(prediction_data):
         )
         channel = connection.channel()
 
-        # Declare queue
-        channel.queue_declare(
-            queue='upload_queue',
-            durable=False,
-            auto_delete=False
-        )
+
 
         message = {
-            'action': 'aimodel_uploader_uploadprediction',
+            'action': Action.AIMODEL_UPLOADER_UPLOAD_PREDICTION.value,
             'prediction_data': prediction_data,
         }
 
         channel.basic_publish(
             exchange='',
-            routing_key='upload_queue',
+            routing_key=QueueName.UPLOAD.value,
             body=json.dumps(message)
         )
         
@@ -141,7 +127,7 @@ def process_message(ch, method, properties, body):
 
         print(f"[DEBUG] Received message - Action: {action}, File path: {file_path}")
 
-        if action == 'processor_aimodel_trainmodel':
+        if action == Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value:
             # Train the model
             print("[DEBUG] Starting model training...")
             model, feature_columns = train_model(file_path)
@@ -170,16 +156,11 @@ def start_listening():
         )
         channel = connection.channel()
 
-        # Declare queue
-        channel.queue_declare(
-            queue='ai_model_queue',
-            durable=False,
-            auto_delete=False
-        )
+
 
         # Set up consumer
         channel.basic_consume(
-            queue='ai_model_queue',
+            queue=QueueName.AI_MODEL.value,
             on_message_callback=process_message
         )
 

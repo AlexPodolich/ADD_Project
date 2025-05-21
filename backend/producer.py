@@ -1,11 +1,14 @@
+
+
 import os
-import csv
 import json
 import pika
-from datetime import datetime
+from backend.dictionary import QueueName, Action, DataColumn
+
 
 # File path for the dataset
-CSV_FILE_PATH = './data/google_play_store_dataset.csv'
+from backend.dictionary import FilePath
+CSV_FILE_PATH = FilePath.DATASET.value
 
 def send_to_uploader(file_path):
     """Send the dataset file path to the uploader via RabbitMQ"""
@@ -17,13 +20,14 @@ def send_to_uploader(file_path):
         channel = connection.channel()
 
         # Declare queue for uploader
-        channel.queue_declare(queue='upload_queue', durable=False, auto_delete=False)
-
-        # Send file path to uploader
+        message = {
+            Action.PRODUCER_UPLOADER_SEND_RAW.name.lower(): Action.PRODUCER_UPLOADER_SEND_RAW.value,
+            DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path': file_path
+        }
         channel.basic_publish(
             exchange='',
-            routing_key='upload_queue',
-            body=json.dumps({'action': 'producer_uploader_sendRawData', 'file_path': file_path})
+            routing_key=QueueName.UPLOAD.value,
+            body=json.dumps(message)
         )
         print("File path sent to uploader queue.")
 
@@ -42,13 +46,14 @@ def send_to_processor(file_path):
         channel = connection.channel()
 
         # Declare queue for processor
-        channel.queue_declare(queue='process_queue', durable=False, auto_delete=False)
-
-        # Send file path to processor
+        message = {
+            Action.PRODUCER_PROCESSOR_SEND_RAW.name.lower(): Action.PRODUCER_PROCESSOR_SEND_RAW.value,
+            DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path': file_path
+        }
         channel.basic_publish(
             exchange='',
-            routing_key='process_queue',
-            body=json.dumps({'action': 'producer_processor_sendRawData', 'file_path': file_path})
+            routing_key=QueueName.PROCESS.value,
+            body=json.dumps(message)
         )
         print("File path sent to processor queue.")
 

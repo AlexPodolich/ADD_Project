@@ -7,7 +7,7 @@ import pickle
 import os
 import json
 import pika
-from datetime import datetime
+from backend.dictionary import QueueName, Action
 
 def prepare_data(df):
     """Prepare features and target variables"""
@@ -122,20 +122,16 @@ def send_to_uploader(prediction_data):
         channel = connection.channel()
 
         # Declare queue
-        channel.queue_declare(
-            queue='upload_queue',
-            durable=False,
-            auto_delete=False
-        )
+
 
         message = {
-            'action': 'aimodel_uploader_uploadprediction',
+            'action': Action.AIMODEL_UPLOADER_UPLOAD_PREDICTION.value,
             'prediction_data': prediction_data,
         }
 
         channel.basic_publish(
             exchange='',
-            routing_key='upload_queue',
+            routing_key=QueueName.UPLOAD.value,
             body=json.dumps(message)
         )
         
@@ -154,7 +150,7 @@ def process_message(ch, method, properties, body):
 
         print(f"[DEBUG] Received message - Action: {action}, File path: {file_path}")
 
-        if action == 'processor_aimodel_trainmodel':
+        if action == Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value:
             # Train the model
             print("[DEBUG] Starting model training...")
             model, feature_columns = train_model(file_path)
@@ -204,15 +200,11 @@ def start_listening():
         channel = connection.channel()
 
         # Declare queue
-        channel.queue_declare(
-            queue='ai_model_queue',
-            durable=False,
-            auto_delete=False
-        )
+
 
         # Set up consumer
         channel.basic_consume(
-            queue='ai_model_queue',
+            queue=QueueName.AI_MODEL.value,
             on_message_callback=process_message
         )
 
