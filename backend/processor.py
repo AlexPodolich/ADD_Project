@@ -6,32 +6,6 @@ import pika
 import json
 
 
-def clean_size(size_str):
-    """Convert size string to numeric MB value"""
-    if pd.isna(size_str) or size_str == 'Varies with device':
-        return None
-    if isinstance(size_str, (int, float)):
-        return size_str
-    # Remove +, M, k, and commas from the string
-    size = float(size_str.replace('M', '').replace('k', '').replace(',', '').replace('+', ''))
-    if 'k' in str(size_str).lower():
-        size = size / 1024
-    return size
-
-def clean_installs(install_str):
-    """Convert install string to numeric value"""
-    if pd.isna(install_str) or install_str == 'Free':
-        return 0
-    return int(install_str.replace(',', '').replace('+', '').strip())
-
-def clean_price(price_str):
-    """Convert price string to numeric value"""
-    if pd.isna(price_str) or price_str == 'Free' or not isinstance(price_str, str):
-        return 0.0
-    try:
-        return float(price_str.replace('$', '').strip())
-    except ValueError:
-        return 0.0
 
 def send_to_uploader(file_path):
     """Send cleaned data file path to uploader via RabbitMQ"""
@@ -130,6 +104,34 @@ def process_message(ch, method, properties, body):
 
     except Exception as e:
         print(f"Error processing message: {e}")
+
+def clean_size(size_str):
+    """Convert size string to numeric MB value"""
+    if pd.isna(size_str) or size_str == 'Varies with device':
+        return None
+    if isinstance(size_str, (int, float)):
+        return size_str
+    # Remove +, M, k, and commas from the string
+    size = float(size_str.replace('M', '').replace('k', '').replace(',', '').replace('+', ''))
+    if 'k' in str(size_str).lower():
+        size = size / 1024
+    return size
+
+def clean_installs(install_str):
+    """Convert install string to numeric value"""
+    if pd.isna(install_str) or install_str == 'Free':
+        return 0
+    return int(install_str.replace(',', '').replace('+', '').strip())
+
+def clean_price(price_str):
+    """Convert price string to numeric value"""
+    if pd.isna(price_str) or price_str == 'Free' or not isinstance(price_str, str):
+        return 0.0
+    try:
+        return float(price_str.replace('$', '').strip())
+    except ValueError:
+        return 0.0
+
 
 def process_data(file_path):
     """Process the data received from the producer"""
