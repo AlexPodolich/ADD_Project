@@ -1,3 +1,4 @@
+
 # Enums for string constants used in the ADD project
 from enum import Enum, auto
 
@@ -10,6 +11,13 @@ class QueueName(str, Enum):
     PROCESS = "process_queue"
     AI_MODEL = "ai_model_queue"
     UPLOAD = "upload_queue"
+
+# Exchanges for RabbitMQ communication
+class Exchange(str, Enum):
+    # Direct exchange for routing messages is used when the producer and consumer use the same queue and the same routing key
+    ADD_DIRECT = "add_direct"
+    #the one with '.name.' syntax
+    ADD_TOPIC = "add_topic"
 
 # Action strings for message routing between services
 class Action(str, Enum):
