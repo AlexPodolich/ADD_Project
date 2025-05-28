@@ -91,9 +91,10 @@ export default function Home() {
       }
       setHistory(mappedHistory as PredictionResult[]);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching prediction history:", err);
-      setError(`Failed to load prediction history: ${err.message}`);
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(`Failed to load prediction history: ${errorMessage}`);
       setHistory([]);
     } finally {
       // Finish loading
@@ -111,7 +112,7 @@ export default function Home() {
                 schema: 'public',
                 table: 'prediction_history'
             },
-            (payload) => {
+            () => {
                 // Fetch fresh data when changes occur
                 fetchHistory();
             }
@@ -169,7 +170,7 @@ export default function Home() {
     console.log("Sending data to backend:", inputData);
    
     try {
-      const response = await fetch('http://localhost:5001/predict', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/predict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,10 +183,9 @@ export default function Home() {
           throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
       }
 
-      var predictionResult: PredictionResult = await response.json();
+      const predictionResult: PredictionResult = await response.json();
       console.log("Received prediction result from backend:", predictionResult);
 
-     
       // Fetch fresh history data after prediction
       // Add 1 second delay before showing prediction and fetching history
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -214,16 +214,16 @@ export default function Home() {
         created_at: item.created_at,
       })) || [];
 
-      
       setHistory(mappedHistory as PredictionResult[]);
      
       if (mappedHistory.length > 0) {
         setLatestPrediction(mappedHistory[0]);
-      }  // Set latest prediction after delay
+      }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error during prediction processing:", err);
-      setError(err.message || "An unexpected error occurred.");
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setError(errorMessage);
       setLatestPrediction(null); // Clear latest prediction on error
     } finally {
       setIsLoading(false);

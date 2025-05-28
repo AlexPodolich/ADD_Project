@@ -6,49 +6,92 @@ import json
 import pandas as pd
 import pika
 from psycopg2.extras import execute_batch
+import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
+RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
+
 # Database configuration
-DB_CONFIG = {
-    'user': os.getenv("user"),
-    'password': os.getenv("password"),
-    'host': os.getenv("host"),
-    'port': os.getenv("port"),
-    'dbname': os.getenv("dbname")
-}
+DB_USER = os.environ.get('user')
+DB_PASSWORD = os.environ.get('password')
+DB_HOST = os.environ.get('host')
+DB_PORT = os.environ.get('port', '5432')
+DB_NAME = os.environ.get('dbname')
+
+# Validate required environment variables
+if not DB_HOST:
+    raise ValueError("host environment variable is not set")
+if not DB_USER:
+    raise ValueError("user environment variable is not set")
+if not DB_PASSWORD:
+    raise ValueError("password environment variable is not set")
+if not DB_NAME:
+    raise ValueError("dbname environment variable is not set")
+
+# Log environment variables (without sensitive data)
+logger.info(f"host: {DB_HOST}")
+logger.info(f"port: {DB_PORT}")
+logger.info(f"user: {DB_USER}")
+logger.info(f"dbname: {DB_NAME}")
+
+# Construct database connection string
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
+
+# Log the connection string (without password)
+safe_conn_string = DATABASE_URL.replace(DB_PASSWORD, '****')
+logger.info(f"Database connection string: {safe_conn_string}")
 
 CSV_FILE_PATH = "./data/google_play_store_dataset.csv"
 BATCH_SIZE = 1000  # Optimal batch size for performance
 
 def create_connection():
     """Create and return a new database connection"""
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        conn.autocommit = False
-        return conn
-    except Exception as e:
-        print(f"Database connection failed: {e}")
-        raise
+    max_retries = 5
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[UPLOADER] Attempting to connect to database (attempt {attempt + 1}/{max_retries})...")
+            conn = psycopg2.connect(
+                DATABASE_URL,
+                sslmode='require'
+            )
+            conn.autocommit = False
+            logger.info("[UPLOADER] Successfully connected to database")
+            return conn
+        except Exception as e:
+            logger.error(f"[UPLOADER] Database connection failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                logger.info(f"[UPLOADER] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("[UPLOADER] Max retries reached. Could not connect to database.")
+                raise
 
 def upload_raw_data(file_path):
     """Upload raw data to the database based on the file path"""
-    print("Uploading raw data...")
+    logger.info("Starting raw data upload...")
     try:
         # Debug: Print the file path
-        print("Received file path:", file_path)
+        logger.info(f"Received file path: {file_path}")
 
         # Check if file path is empty
         if not file_path.strip():
-            print("Received empty file path. Skipping processing.")
+            logger.info("Received empty file path. Skipping processing.")
             return
 
         # Read CSV file into DataFrame
         df = pd.read_csv(file_path)
 
         if df.empty:
-            print("Received file is valid but results in an empty DataFrame. Skipping processing.")
+            logger.info("Received file is valid but results in an empty DataFrame. Skipping processing.")
             return
 
         # Upload raw data to the database
@@ -56,7 +99,7 @@ def upload_raw_data(file_path):
         cursor = conn.cursor()
 
         # Clear existing data
-        print("Clearing existing data...")
+        logger.info("Clearing existing data...")
         cursor.execute("TRUNCATE TABLE raw_apps RESTART IDENTITY")
         conn.commit()
 
@@ -87,38 +130,43 @@ def upload_raw_data(file_path):
                 execute_batch(cursor, insert_query, batch)
                 conn.commit()
                 batch = []
-                print(f"Uploaded {total_rows} rows so far...")
+                logger.info(f"Uploaded {total_rows} rows so far...")
 
         # Insert remaining rows
         if batch:
             execute_batch(cursor, insert_query, batch)
             conn.commit()
-            print(f"Uploaded {total_rows} rows so far...")
+            logger.info(f"Uploaded {total_rows} rows so far...")
 
-        print("Raw data uploaded successfully.")
+        logger.info("Raw data uploaded successfully.")
 
     except pd.errors.EmptyDataError:
-        print("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
+        logger.error("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
     except Exception as e:
-        print(f"Error uploading raw data: {e}")
+        logger.error(f"Error uploading raw data: {e}")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
 def upload_cleaned_data(file_path):
     """Upload cleaned data to the database based on the file path"""
-    print("Uploading cleaned data...")
+    logger.info("Starting cleaned data upload...")
     try:
         # Debug: Print the file path
-        print("Received file path:", file_path)
+        logger.info(f"Received file path: {file_path}")
 
         # Check if file path is empty
         if not file_path.strip():
-            print("Received empty file path. Skipping processing.")
+            logger.info("Received empty file path. Skipping processing.")
             return
 
         # Read CSV file into DataFrame
         df = pd.read_csv(file_path)
 
         if df.empty:
-            print("Received file is valid but results in an empty DataFrame. Skipping processing.")
+            logger.info("Received file is valid but results in an empty DataFrame. Skipping processing.")
             return
 
         # Upload cleaned data to the database
@@ -126,7 +174,7 @@ def upload_cleaned_data(file_path):
         cursor = conn.cursor()
 
         # Clear existing data
-        print("Clearing existing data from cleaned_apps table...")
+        logger.info("Clearing existing data from cleaned_apps table...")
         cursor.execute("TRUNCATE TABLE cleaned_apps RESTART IDENTITY")
         conn.commit()
 
@@ -152,16 +200,21 @@ def upload_cleaned_data(file_path):
 
         execute_batch(cursor, insert_query, batch)
         conn.commit()
-        print("Cleaned data uploaded successfully.")
+        logger.info("Cleaned data uploaded successfully.")
 
     except pd.errors.EmptyDataError:
-        print("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
+        logger.error("Pandas encountered an EmptyDataError. The file might be invalid or empty.")
     except Exception as e:
-        print(f"Error uploading cleaned data: {e}")
+        logger.error(f"Error uploading cleaned data: {e}")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
 def upload_prediction(prediction_data):
     """Upload prediction to the prediction_history table"""
-    print("Uploading prediction...")
+    logger.info("[UPLOADER] Starting prediction upload...")
     try:
         # Upload prediction to the database
         conn = create_connection()
@@ -180,8 +233,9 @@ def upload_prediction(prediction_data):
         input_features = prediction_data['Input Features']
         predictions = prediction_data['Predictions']
         
-        print("Input Features:", input_features)
-        print("Predictions:", predictions)
+        logger.info(f"[UPLOADER] Input Features: {input_features}")
+        logger.info(f"[UPLOADER] Predictions: {predictions}")
+        
         prepared_row = (
             input_features['category'],
             input_features['app_size'],
@@ -197,11 +251,18 @@ def upload_prediction(prediction_data):
         # Insert data
         cursor.execute(insert_query, prepared_row)
         conn.commit()
-        print("Prediction uploaded successfully.")
+        logger.info("[UPLOADER] Prediction uploaded successfully")
 
     except Exception as e:
-        print(f"Error uploading prediction: {e}")
+        logger.error(f"[UPLOADER] Error uploading prediction: {str(e)}")
+        if 'conn' in locals():
+            conn.rollback()
         raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -209,63 +270,65 @@ def process_message(ch, method, properties, body):
         message = json.loads(body)
         action = message.get('action')
         
-        print(f"Received message - Action: {action}")
+        logger.info(f"[UPLOADER] Received message - Action: {action}")
 
         if action == 'producer_uploader_sendRawData':
             file_path = message.get('file_path')
+            logger.info(f"[UPLOADER] Processing raw data from: {file_path}")
             upload_raw_data(file_path)
         elif action == 'processor_uploader_upload_cleaned':
             file_path = message.get('file_path')
+            logger.info(f"[UPLOADER] Processing cleaned data from: {file_path}")
             upload_cleaned_data(file_path)
         elif action == 'aimodel_uploader_uploadprediction':
             prediction_data = message.get('prediction_data')
+            logger.info(f"[UPLOADER] Processing prediction data: {prediction_data}")
             upload_prediction(prediction_data)
         else:
-            print(f"Unknown action: {action}")
+            logger.info(f"[UPLOADER] Unknown action: {action}")
 
         # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(f"[UPLOADER] Successfully processed message with action: {action}")
 
     except Exception as e:
-        print(f"Error processing message: {e}")
+        logger.error(f"[UPLOADER] Error processing message: {e}")
+        logger.error(f"[UPLOADER] Message content: {body}")
 
 def start_listening():
     """Start listening for messages from RabbitMQ"""
     connection = None
-    try:
-        # Create connection
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters('localhost')
-        )
-        channel = connection.channel()
-        
-        # Declare queue
-        channel.queue_declare(queue='upload_queue')
-        
-        print("Uploader service is listening for messages...")
-        
-        # Set up consumer
-        channel.basic_consume(
-            queue='upload_queue',
-            on_message_callback=process_message
-        )
-        
+    for _ in range(10):
         try:
-            channel.start_consuming()
-        except KeyboardInterrupt:
-            print("\nGracefully shutting down the uploader service...")
-            channel.stop_consuming()
-            
-    except Exception as e:
-        print(f"Error in RabbitMQ connection: {e}")
-    finally:
-        if connection and not connection.is_closed:
-            connection.close()
-            print("Connection closed")
+            logger.info("[UPLOADER] Attempting to connect to RabbitMQ...")
+            # Create connection
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(RABBITMQ_HOST)
+            )
+            channel = connection.channel()
+            channel.queue_declare(queue='upload_queue')
+            logger.info("[UPLOADER] Successfully connected to RabbitMQ")
+            logger.info("[UPLOADER] Service is listening for messages...")
+            channel.basic_consume(
+                queue='upload_queue',
+                on_message_callback=process_message
+            )
+            try:
+                channel.start_consuming()
+            except KeyboardInterrupt:
+                logger.info("\n[UPLOADER] Gracefully shutting down the uploader service...")
+                channel.stop_consuming()
+            return
+        except Exception as e:
+            logger.error(f"[UPLOADER] Error in RabbitMQ connection: {e}")
+            time.sleep(5)
+    if connection and not connection.is_closed:
+        connection.close()
+        logger.info("[UPLOADER] Connection closed")
 
 if __name__ == "__main__":
-    print("Starting uploader service...")
+    logger.info("[UPLOADER] Starting uploader service...")
     try:
         start_listening()
     except KeyboardInterrupt:
-        print("\nUploader service stopped")
+        logger.info("\n[UPLOADER] Uploader service stopped")

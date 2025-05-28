@@ -16,6 +16,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import logging
 import random
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,7 +29,7 @@ app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000", "http://localhost:6543"]) # Adjust port if needed
 
 # RabbitMQ Configuration (assuming localhost default)
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
+RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
 UPLOAD_QUEUE = 'upload_queue'
 
 def prepare_data(df):
@@ -93,44 +94,40 @@ def load_model(model_path=None):
         print(f"Error loading model: {e}")
         return None, None
 
-
-
 def send_to_uploader(prediction_data):
     """Send prediction to uploader via RabbitMQ"""
-    try:
-        print("\n[DEBUG] Attempting to send prediction to uploader...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("\n[DEBUG] Attempting to send prediction to uploader...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
-
-        # Declare queue
-        channel.queue_declare(
-            queue='upload_queue',
-            durable=False,
-            auto_delete=False
-        )
-
-        message = {
-            'action': 'aimodel_uploader_uploadprediction',
-            'prediction_data': prediction_data,
-        }
-
-        channel.basic_publish(
-            exchange='',
-            routing_key='upload_queue',
-            body=json.dumps(message)
-        )
-        
-        print("[DEBUG] Prediction sent to uploader queue successfully")
-        connection.close()
-
-    except Exception as e:
-        print(f"[DEBUG] Error sending prediction to uploader: {e}")
+            channel = connection.channel()
+            channel.queue_declare(
+                queue='upload_queue',
+                durable=False,
+                auto_delete=False
+            )
+            message = {
+                'action': 'aimodel_uploader_uploadprediction',
+                'prediction_data': prediction_data,
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key='upload_queue',
+                body=json.dumps(message)
+            )
+            print("[DEBUG] Prediction sent to uploader queue successfully")
+            connection.close()
+            return
+        except Exception as e:
+            print(f"[DEBUG] Error sending prediction to uploader: {e}")
+            time.sleep(5)
+    raise Exception("Could not connect to RabbitMQ after several attempts")
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -159,36 +156,33 @@ def process_message(ch, method, properties, body):
 
 def start_listening():
     """Start listening for messages from RabbitMQ"""
-    try:
-        print("Starting RabbitMQ listener...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Starting RabbitMQ listener...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
-
-        # Declare queue
-        channel.queue_declare(
-            queue='ai_model_queue',
-            durable=False,
-            auto_delete=False
-        )
-
-        # Set up consumer
-        channel.basic_consume(
-            queue='ai_model_queue',
-            on_message_callback=process_message
-        )
-
-        print("Waiting for messages...")
-        channel.start_consuming()
-
-    except Exception as e:
-        print(f"Error starting RabbitMQ listener: {e}")
-        raise
+            channel = connection.channel()
+            channel.queue_declare(
+                queue='ai_model_queue',
+                durable=False,
+                auto_delete=False
+            )
+            channel.basic_consume(
+                queue='ai_model_queue',
+                on_message_callback=process_message
+            )
+            print("Waiting for messages...")
+            channel.start_consuming()
+            return
+        except Exception as e:
+            print(f"Error starting RabbitMQ listener: {e}")
+            time.sleep(5)
+    raise Exception("Could not connect to RabbitMQ after several attempts")
 
 @app.route('/predict', methods=['POST'])
 def predictAndSend():
@@ -246,7 +240,7 @@ def predictAndSend():
 if __name__ == "__main__":
     # Możesz uruchomić obie funkcje w różnych wątkach, jeśli chcesz też nasłuchiwać RabbitMQ.
     from threading import Thread
-    flask_api_port = 5001 
+    flask_api_port = 5000 
     logging.info(f"Starting Flask API server on port {flask_api_port}...")
     Thread(target=start_listening).start()
     app.run(debug=True, port=flask_api_port, host='0.0.0.0') 

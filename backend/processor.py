@@ -4,86 +4,82 @@ import numpy as np
 from datetime import datetime
 import pika
 import json
+import time
 
+RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
 
 
 def send_to_uploader(file_path):
     """Send cleaned data file path to uploader via RabbitMQ"""
-    try:
-        print("Trying to send message to RabbitMQ...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Trying to send message to RabbitMQ...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
-        
-        # Declare queue with consistent settings
-        channel.queue_declare(
-            queue='upload_queue',
-            durable=False,  # Changed to match uploader
-            auto_delete=False
-        )
-        
-        message = {
-            'action': 'processor_uploader_upload_cleaned',
-            'file_path': file_path,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        channel.basic_publish(
-            exchange='',
-            routing_key='upload_queue',
-            body=json.dumps(message)
-        )
-        
-        print("Cleaned data upload command sent")
-        connection.close()
-        
-    except Exception as e:
-        print(f"Failed to send message to RabbitMQ: {e}")
-        raise
+            channel = connection.channel()
+            channel.queue_declare(
+                queue='upload_queue',
+                durable=False,
+                auto_delete=False
+            )
+            message = {
+                'action': 'processor_uploader_upload_cleaned',
+                'file_path': file_path,
+                'timestamp': datetime.now().isoformat()
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key='upload_queue',
+                body=json.dumps(message)
+            )
+            print("Cleaned data upload command sent")
+            connection.close()
+            return
+        except Exception as e:
+            print(f"Failed to send message to RabbitMQ: {e}")
+            time.sleep(5)
+    raise Exception("Could not connect to RabbitMQ after several attempts")
 
 def send_to_aimodel(file_path):
     """Send cleaned data file path to aimodel via RabbitMQ"""
-    try:
-        print("Trying to send message to RabbitMQ for aimodel...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Trying to send message to RabbitMQ for aimodel...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
-
-        # Declare queue with consistent settings
-        channel.queue_declare(
-            queue='ai_model_queue',
-            durable=False,
-            auto_delete=False
-        )
-
-        message = {
-            'action': 'processor_aimodel_trainmodel',
-            'file_path': file_path,
-            'timestamp': datetime.now().isoformat()
-        }
-
-        channel.basic_publish(
-            exchange='',
-            routing_key='ai_model_queue',
-            body=json.dumps(message)
-        )
-
-        print("Cleaned data training command sent to aimodel")
-        connection.close()
-
-    except Exception as e:
-        print(f"Failed to send message to RabbitMQ for aimodel: {e}")
-        raise
+            channel = connection.channel()
+            channel.queue_declare(
+                queue='ai_model_queue',
+                durable=False,
+                auto_delete=False
+            )
+            message = {
+                'action': 'processor_aimodel_trainmodel',
+                'file_path': file_path,
+                'timestamp': datetime.now().isoformat()
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key='ai_model_queue',
+                body=json.dumps(message)
+            )
+            print("Cleaned data training command sent to aimodel")
+            connection.close()
+            return
+        except Exception as e:
+            print(f"Failed to send message to RabbitMQ for aimodel: {e}")
+            time.sleep(5)
+    raise Exception("Could not connect to RabbitMQ after several attempts")
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -179,36 +175,33 @@ def process_data(file_path):
 
 def start_listening():
     """Start listening for messages from RabbitMQ"""
-    try:
-        print("Starting RabbitMQ listener...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Starting RabbitMQ listener...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
-
-        # Declare queue
-        channel.queue_declare(
-            queue='process_queue',
-            durable=False,
-            auto_delete=False
-        )
-
-        # Set up consumer
-        channel.basic_consume(
-            queue='process_queue',
-            on_message_callback=process_message
-        )
-
-        print("Waiting for messages...")
-        channel.start_consuming()
-
-    except Exception as e:
-        print(f"Error starting RabbitMQ listener: {e}")
-        raise
+            channel = connection.channel()
+            channel.queue_declare(
+                queue='process_queue',
+                durable=False,
+                auto_delete=False
+            )
+            channel.basic_consume(
+                queue='process_queue',
+                on_message_callback=process_message
+            )
+            print("Waiting for messages...")
+            channel.start_consuming()
+            return
+        except Exception as e:
+            print(f"Error starting RabbitMQ listener: {e}")
+            time.sleep(5)
+    raise Exception("Could not connect to RabbitMQ after several attempts")
 
 if __name__ == "__main__":
     start_listening()
