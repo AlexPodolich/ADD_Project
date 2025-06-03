@@ -1,3 +1,4 @@
+
 import os
 import json
 import pandas as pd
@@ -23,7 +24,6 @@ load_dotenv(dotenv_path=dotenv_path)
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000", "http://localhost:6543"]) # Adjust port if needed
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-UPLOAD_QUEUE = 'upload_queue'
 
 def prepare_data(df):
     """Prepare features and target variables"""
@@ -39,7 +39,6 @@ def prepare_data(df):
     return X, y
 
 def train_model(data_path):
-    """Train the model using the provided data"""
     print("Loading data...")
     data = pd.read_csv(data_path)
     
@@ -89,12 +88,9 @@ def load_model(model_path=None):
 
 def send_to_uploader(prediction_data):
     """Send prediction to uploader via RabbitMQ"""
-    max_retries = 5
-    retry_delay = 5
-    
-    for attempt in range(max_retries):
+    for _ in range(10):
         try:
-            logger.info(f"[AIMODEL] Attempting to send prediction to uploader (attempt {attempt + 1}/{max_retries})...")
+            print("\n[DEBUG] Attempting to send prediction to uploader...")
             connection = pika.BlockingConnection(
                 pika.ConnectionParameters(
                     host=RABBITMQ_HOST,
@@ -115,18 +111,11 @@ def send_to_uploader(prediction_data):
                 body=json.dumps(message)
             )
             
-            logger.info("[AIMODEL] Prediction sent to uploader queue successfully")
+            print("[DEBUG] Prediction sent to uploader queue successfully")
             connection.close()
-            return
 
         except Exception as e:
-            logger.error(f"[AIMODEL] Error sending prediction to uploader (attempt {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                logger.info(f"[AIMODEL] Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                logger.error("[AIMODEL] Max retries reached. Could not send prediction to uploader.")
-                raise
+            print(f"[DEBUG] Error sending prediction to uploader: {e}")
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -234,9 +223,8 @@ def predictAndSend():
 
 
 if __name__ == "__main__":
-    # Możesz uruchomić obie funkcje w różnych wątkach, jeśli chcesz też nasłuchiwać RabbitMQ.
     from threading import Thread
-    flask_api_port = 5000 
+    flask_api_port = FLASK_API_PORT = int(os.getenv('FLASK_API_PORT'))
     logging.info(f"Starting Flask API server on port {flask_api_port}...")
     Thread(target=start_listening).start()
     app.run(debug=True, port=flask_api_port, host='0.0.0.0') 

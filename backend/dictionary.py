@@ -90,3 +90,6 @@ class PredictionColumn(str, Enum):
 #   from dictionary import QueueName, Action
 #   queue = QueueName.PROCESS
 #   action = Action.PRODUCER_UPLOADER_SEND_RAW
+
+class FlaskAPI(str, Enum):
+    FLASK_API_PORT = 5000
