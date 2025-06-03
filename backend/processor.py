@@ -4,7 +4,7 @@ import pika
 import json
 import time
 from .dictionary import QueueName, Action
-
+import os
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
 
 
