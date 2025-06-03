@@ -1,4 +1,6 @@
-import csv
+
+
+
 import psycopg2
 from dotenv import load_dotenv
 import os
@@ -12,6 +14,8 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+from backend.dictionary import QueueName, Action, DataColumn, DbColumn, PredictionColumn
+
 
 # Load environment variables
 load_dotenv()
@@ -48,7 +52,6 @@ DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NA
 safe_conn_string = DATABASE_URL.replace(DB_PASSWORD, '****')
 logger.info(f"Database connection string: {safe_conn_string}")
 
-CSV_FILE_PATH = "./data/google_play_store_dataset.csv"
 BATCH_SIZE = 1000  # Optimal batch size for performance
 
 def create_connection():
@@ -115,12 +118,22 @@ def upload_raw_data(file_path):
         # Insert data into the database
         batch = []
         total_rows = 0
+
         for index, row in df.iterrows():
             prepared_row = (
-                row['App'], row['Category'], row['Rating'], row['Reviews'],
-                row['Size'], row['Installs'], row['Type'], row['Price'],
-                row['Content Rating'], row['Genres'], row['Last Updated'],
-                row['Current Ver'], row['Android Ver']
+                row[DataColumn.APP.value],
+                row[DataColumn.CATEGORY.value],
+                row[DataColumn.RATING.value],
+                row[DataColumn.REVIEWS.value],
+                row[DataColumn.SIZE.value],
+                row[DataColumn.INSTALLS.value],
+                row[DataColumn.TYPE.value],
+                row[DataColumn.PRICE.value],
+                row[DataColumn.CONTENT_RATING.value],
+                row[DataColumn.GENRES.value],
+                row[DataColumn.LAST_UPDATED.value],
+                row[DataColumn.CURRENT_VER.value],
+                row[DataColumn.ANDROID_VER.value]
             )
             batch.append(prepared_row)
             total_rows += 1
@@ -189,12 +202,22 @@ def upload_cleaned_data(file_path):
 
         # Insert data into the database
         batch = []
+
         for _, row in df.iterrows():
             prepared_row = (
-                row['App'], row['Category'], row['Rating'], row['Reviews'],
-                row['Size'], row['Installs'], row['Type'], row['Price'],
-                row['Content Rating'], row['Genres'], row['Last Updated'],
-                row['Current Ver'], row['Android Ver']
+                row[DataColumn.APP.value],
+                row[DataColumn.CATEGORY.value],
+                row[DataColumn.RATING.value],
+                row[DataColumn.REVIEWS.value],
+                row[DataColumn.SIZE.value],
+                row[DataColumn.INSTALLS.value],
+                row[DataColumn.TYPE.value],
+                row[DataColumn.PRICE.value],
+                row[DataColumn.CONTENT_RATING.value],
+                row[DataColumn.GENRES.value],
+                row[DataColumn.LAST_UPDATED.value],
+                row[DataColumn.CURRENT_VER.value],
+                row[DataColumn.ANDROID_VER.value]
             )
             batch.append(prepared_row)
 
@@ -237,15 +260,15 @@ def upload_prediction(prediction_data):
         logger.info(f"[UPLOADER] Predictions: {predictions}")
         
         prepared_row = (
-            input_features['category'],
-            input_features['app_size'],
-            input_features['app_type'],
-            input_features['price'],
-            input_features['content_rating'],
-            input_features['genres'],
-            predictions['Rating'],
-            predictions['Installs'],
-            predictions['Reviews']
+            input_features[PredictionColumn.CATEGORY.value],
+            input_features[PredictionColumn.SIZE.value],
+            input_features[PredictionColumn.TYPE.value],
+            input_features[PredictionColumn.PRICE.value],
+            input_features[PredictionColumn.CONTENT_RATING.value],
+            input_features[PredictionColumn.GENRES.value],
+            predictions[PredictionColumn.RATING.value],
+            predictions[PredictionColumn.INSTALLS.value],
+            predictions[PredictionColumn.REVIEWS.value]
         )
 
         # Insert data
@@ -272,17 +295,14 @@ def process_message(ch, method, properties, body):
         
         logger.info(f"[UPLOADER] Received message - Action: {action}")
 
-        if action == 'producer_uploader_sendRawData':
-            file_path = message.get('file_path')
-            logger.info(f"[UPLOADER] Processing raw data from: {file_path}")
+        if action == Action.PRODUCER_UPLOADER_SEND_RAW.value:
+            file_path = message.get(DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path')
             upload_raw_data(file_path)
-        elif action == 'processor_uploader_upload_cleaned':
-            file_path = message.get('file_path')
-            logger.info(f"[UPLOADER] Processing cleaned data from: {file_path}")
+        elif action == Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value:
+            file_path = message.get(DataColumn.FILE_PATH.value if hasattr(DataColumn, 'FILE_PATH') else 'file_path')
             upload_cleaned_data(file_path)
-        elif action == 'aimodel_uploader_uploadprediction':
-            prediction_data = message.get('prediction_data')
-            logger.info(f"[UPLOADER] Processing prediction data: {prediction_data}")
+        elif action == Action.AIMODEL_UPLOADER_UPLOAD_PREDICTION.value:
+            prediction_data = message.get(PredictionColumn.PREDICTION_DATA.value if hasattr(PredictionColumn, 'PREDICTION_DATA') else 'prediction_data')
             upload_prediction(prediction_data)
         else:
             logger.info(f"[UPLOADER] Unknown action: {action}")
@@ -298,30 +318,46 @@ def process_message(ch, method, properties, body):
 def start_listening():
     """Start listening for messages from RabbitMQ"""
     connection = None
-    for _ in range(10):
+    # Create connection
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters('localhost')
+    )
+    channel = connection.channel()
+    
+    # Declare queue
+    channel.queue_declare(queue=QueueName.UPLOAD.value)
+    
+    print("Uploader service is listening for messages...")
+    
+    # Set up consumer
+    channel.basic_consume(
+        queue=QueueName.UPLOAD.value,
+        on_message_callback=process_message
+    )
+    
+    try:
+        logger.info("[UPLOADER] Attempting to connect to RabbitMQ...")
+        # Create connection
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(RABBITMQ_HOST)
+        )
+        channel = connection.channel()
+        channel.queue_declare(queue='upload_queue')
+        logger.info("[UPLOADER] Successfully connected to RabbitMQ")
+        logger.info("[UPLOADER] Service is listening for messages...")
+        channel.basic_consume(
+            queue='upload_queue',
+            on_message_callback=process_message
+        )
         try:
-            logger.info("[UPLOADER] Attempting to connect to RabbitMQ...")
-            # Create connection
-            connection = pika.BlockingConnection(
-                pika.ConnectionParameters(RABBITMQ_HOST)
-            )
-            channel = connection.channel()
-            channel.queue_declare(queue='upload_queue')
-            logger.info("[UPLOADER] Successfully connected to RabbitMQ")
-            logger.info("[UPLOADER] Service is listening for messages...")
-            channel.basic_consume(
-                queue='upload_queue',
-                on_message_callback=process_message
-            )
-            try:
-                channel.start_consuming()
-            except KeyboardInterrupt:
-                logger.info("\n[UPLOADER] Gracefully shutting down the uploader service...")
-                channel.stop_consuming()
-            return
-        except Exception as e:
-            logger.error(f"[UPLOADER] Error in RabbitMQ connection: {e}")
-            time.sleep(5)
+            channel.start_consuming()
+        except KeyboardInterrupt:
+            logger.info("\n[UPLOADER] Gracefully shutting down the uploader service...")
+            channel.stop_consuming()
+        return
+    except Exception as e:
+        logger.error(f"[UPLOADER] Error in RabbitMQ connection: {e}")
+        time.sleep(5)
     if connection and not connection.is_closed:
         connection.close()
         logger.info("[UPLOADER] Connection closed")

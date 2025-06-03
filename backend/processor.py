@@ -1,10 +1,9 @@
-import os
 import pandas as pd
-import numpy as np
 from datetime import datetime
 import pika
 import json
 import time
+from .dictionary import QueueName, Action
 
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
 
@@ -22,28 +21,25 @@ def send_to_uploader(file_path):
                 )
             )
             channel = connection.channel()
-            channel.queue_declare(
-                queue='upload_queue',
-                durable=False,
-                auto_delete=False
-            )
+            
+            # Declare queue with consistent settings
             message = {
-                'action': 'processor_uploader_upload_cleaned',
+                'action': Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value,
                 'file_path': file_path,
                 'timestamp': datetime.now().isoformat()
             }
             channel.basic_publish(
                 exchange='',
-                routing_key='upload_queue',
+                routing_key=QueueName.UPLOAD.value,
                 body=json.dumps(message)
             )
+            
             print("Cleaned data upload command sent")
             connection.close()
-            return
+        
         except Exception as e:
             print(f"Failed to send message to RabbitMQ: {e}")
-            time.sleep(5)
-    raise Exception("Could not connect to RabbitMQ after several attempts")
+            raise
 
 def send_to_aimodel(file_path):
     """Send cleaned data file path to aimodel via RabbitMQ"""
@@ -57,29 +53,27 @@ def send_to_aimodel(file_path):
                     blocked_connection_timeout=300
                 )
             )
+            
             channel = connection.channel()
-            channel.queue_declare(
-                queue='ai_model_queue',
-                durable=False,
-                auto_delete=False
-            )
+
+            # Declare queue with consistent settings
             message = {
-                'action': 'processor_aimodel_trainmodel',
+                'action': Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value,
                 'file_path': file_path,
                 'timestamp': datetime.now().isoformat()
             }
             channel.basic_publish(
                 exchange='',
-                routing_key='ai_model_queue',
+                routing_key=QueueName.AI_MODEL.value,
                 body=json.dumps(message)
             )
+
             print("Cleaned data training command sent to aimodel")
             connection.close()
-            return
+
         except Exception as e:
             print(f"Failed to send message to RabbitMQ for aimodel: {e}")
-            time.sleep(5)
-    raise Exception("Could not connect to RabbitMQ after several attempts")
+            raise
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -90,7 +84,7 @@ def process_message(ch, method, properties, body):
 
         print(f"Received message - Action: {action}, File path: {file_path}")
 
-        if action == 'producer_processor_sendRawData':
+        if action == Action.PRODUCER_PROCESSOR_SEND_RAW.value:
             process_data(file_path)
         else:
             print(f"Unknown action: {action}")
@@ -185,23 +179,28 @@ def start_listening():
                     blocked_connection_timeout=300
                 )
             )
+            
             channel = connection.channel()
+
+            # Declare queue
             channel.queue_declare(
                 queue='process_queue',
                 durable=False,
                 auto_delete=False
             )
+
+            # Set up consumer
             channel.basic_consume(
-                queue='process_queue',
+                queue=QueueName.PROCESS.value,
                 on_message_callback=process_message
             )
+
             print("Waiting for messages...")
             channel.start_consuming()
-            return
+
         except Exception as e:
             print(f"Error starting RabbitMQ listener: {e}")
-            time.sleep(5)
-    raise Exception("Could not connect to RabbitMQ after several attempts")
+            raise
 
 if __name__ == "__main__":
     start_listening()
