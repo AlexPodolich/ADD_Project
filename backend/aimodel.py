@@ -1,4 +1,3 @@
-
 import os
 import json
 import pandas as pd
@@ -17,6 +16,8 @@ import time
 from .dictionary import QueueName, Action
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=dotenv_path)
 app = Flask(__name__)
@@ -88,9 +89,12 @@ def load_model(model_path=None):
 
 def send_to_uploader(prediction_data):
     """Send prediction to uploader via RabbitMQ"""
-    for _ in range(10):
+    max_retries = 5
+    retry_delay = 5
+    
+    for attempt in range(max_retries):
         try:
-            print("\n[DEBUG] Attempting to send prediction to uploader...")
+            logger.info(f"[AIMODEL] Attempting to send prediction to uploader (attempt {attempt + 1}/{max_retries})...")
             connection = pika.BlockingConnection(
                 pika.ConnectionParameters(
                     host=RABBITMQ_HOST,
@@ -111,11 +115,18 @@ def send_to_uploader(prediction_data):
                 body=json.dumps(message)
             )
             
-            print("[DEBUG] Prediction sent to uploader queue successfully")
+            logger.info("[AIMODEL] Prediction sent to uploader queue successfully")
             connection.close()
+            return
 
         except Exception as e:
-            print(f"[DEBUG] Error sending prediction to uploader: {e}")
+            logger.error(f"[AIMODEL] Error sending prediction to uploader (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"[AIMODEL] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("[AIMODEL] Max retries reached. Could not send prediction to uploader.")
+                raise
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""

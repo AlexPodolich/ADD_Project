@@ -1,6 +1,3 @@
-
-
-
 import psycopg2
 from dotenv import load_dotenv
 import os
@@ -318,49 +315,52 @@ def process_message(ch, method, properties, body):
 def start_listening():
     """Start listening for messages from RabbitMQ"""
     connection = None
-    # Create connection
-    connection = pika.BlockingConnection(
-        pika.ConnectionParameters('localhost')
-    )
-    channel = connection.channel()
+    max_retries = 5
+    retry_delay = 5
     
-    # Declare queue
-    channel.queue_declare(queue=QueueName.UPLOAD.value)
-    
-    print("Uploader service is listening for messages...")
-    
-    # Set up consumer
-    channel.basic_consume(
-        queue=QueueName.UPLOAD.value,
-        on_message_callback=process_message
-    )
-    
-    try:
-        logger.info("[UPLOADER] Attempting to connect to RabbitMQ...")
-        # Create connection
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(RABBITMQ_HOST)
-        )
-        channel = connection.channel()
-        channel.queue_declare(queue='upload_queue')
-        logger.info("[UPLOADER] Successfully connected to RabbitMQ")
-        logger.info("[UPLOADER] Service is listening for messages...")
-        channel.basic_consume(
-            queue='upload_queue',
-            on_message_callback=process_message
-        )
+    for attempt in range(max_retries):
         try:
-            channel.start_consuming()
-        except KeyboardInterrupt:
-            logger.info("\n[UPLOADER] Gracefully shutting down the uploader service...")
-            channel.stop_consuming()
-        return
-    except Exception as e:
-        logger.error(f"[UPLOADER] Error in RabbitMQ connection: {e}")
-        time.sleep(5)
-    if connection and not connection.is_closed:
-        connection.close()
-        logger.info("[UPLOADER] Connection closed")
+            logger.info(f"[UPLOADER] Attempting to connect to RabbitMQ (attempt {attempt + 1}/{max_retries})...")
+            # Create connection
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
+            )
+            channel = connection.channel()
+            
+            # Declare queue
+            channel.queue_declare(queue=QueueName.UPLOAD.value)
+            logger.info("[UPLOADER] Successfully connected to RabbitMQ")
+            logger.info("[UPLOADER] Service is listening for messages...")
+            
+            # Set up consumer
+            channel.basic_consume(
+                queue=QueueName.UPLOAD.value,
+                on_message_callback=process_message
+            )
+            
+            try:
+                channel.start_consuming()
+            except KeyboardInterrupt:
+                logger.info("\n[UPLOADER] Gracefully shutting down the uploader service...")
+                channel.stop_consuming()
+            return
+            
+        except Exception as e:
+            logger.error(f"[UPLOADER] Error in RabbitMQ connection (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                logger.info(f"[UPLOADER] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("[UPLOADER] Max retries reached. Could not connect to RabbitMQ.")
+                raise
+        finally:
+            if connection and not connection.is_closed:
+                connection.close()
+                logger.info("[UPLOADER] Connection closed")
 
 if __name__ == "__main__":
     logger.info("[UPLOADER] Starting uploader service...")
