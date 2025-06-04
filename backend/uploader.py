@@ -4,29 +4,23 @@ import os
 import json
 import pandas as pd
 import pika
-from psycopg2.extras import execute_batch
 import time
 import logging
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 from backend.dictionary import QueueName, Action, DataColumn, DbColumn, PredictionColumn
 
-
-# Load environment variables
 load_dotenv()
 
 RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
 
-# Database configuration
 DB_USER = os.environ.get('user')
 DB_PASSWORD = os.environ.get('password')
 DB_HOST = os.environ.get('host')
 DB_PORT = os.environ.get('port', '5432')
 DB_NAME = os.environ.get('dbname')
 
-# Validate required environment variables
 if not DB_HOST:
     raise ValueError("host environment variable is not set")
 if not DB_USER:
@@ -36,20 +30,15 @@ if not DB_PASSWORD:
 if not DB_NAME:
     raise ValueError("dbname environment variable is not set")
 
-# Log environment variables (without sensitive data)
 logger.info(f"host: {DB_HOST}")
 logger.info(f"port: {DB_PORT}")
 logger.info(f"user: {DB_USER}")
 logger.info(f"dbname: {DB_NAME}")
 
-# Construct database connection string
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
 
-# Log the connection string (without password)
 safe_conn_string = DATABASE_URL.replace(DB_PASSWORD, '****')
 logger.info(f"Database connection string: {safe_conn_string}")
-
-BATCH_SIZE = 1000  # Optimal batch size for performance
 
 def create_connection():
     """Create and return a new database connection"""
@@ -113,9 +102,7 @@ def upload_raw_data(file_path):
         """
 
         # Insert data into the database
-        batch = []
         total_rows = 0
-
         for index, row in df.iterrows():
             prepared_row = (
                 row[DataColumn.APP.value],
@@ -132,22 +119,14 @@ def upload_raw_data(file_path):
                 row[DataColumn.CURRENT_VER.value],
                 row[DataColumn.ANDROID_VER.value]
             )
-            batch.append(prepared_row)
+            cursor.execute(insert_query, prepared_row)
             total_rows += 1
-
-            # Insert batch when full
-            if len(batch) >= BATCH_SIZE:
-                execute_batch(cursor, insert_query, batch)
+            if total_rows % 1000 == 0:
                 conn.commit()
-                batch = []
                 logger.info(f"Uploaded {total_rows} rows so far...")
 
-        # Insert remaining rows
-        if batch:
-            execute_batch(cursor, insert_query, batch)
-            conn.commit()
-            logger.info(f"Uploaded {total_rows} rows so far...")
-
+        conn.commit()
+        logger.info(f"Uploaded {total_rows} rows in total.")
         logger.info("Raw data uploaded successfully.")
 
     except pd.errors.EmptyDataError:
@@ -198,8 +177,7 @@ def upload_cleaned_data(file_path):
         """
 
         # Insert data into the database
-        batch = []
-
+        total_rows = 0
         for _, row in df.iterrows():
             prepared_row = (
                 row[DataColumn.APP.value],
@@ -216,10 +194,14 @@ def upload_cleaned_data(file_path):
                 row[DataColumn.CURRENT_VER.value],
                 row[DataColumn.ANDROID_VER.value]
             )
-            batch.append(prepared_row)
+            cursor.execute(insert_query, prepared_row)
+            total_rows += 1
+            if total_rows % 1000 == 0:
+                conn.commit()
+                logger.info(f"Uploaded {total_rows} rows so far...")
 
-        execute_batch(cursor, insert_query, batch)
         conn.commit()
+        logger.info(f"Uploaded {total_rows} rows in total.")
         logger.info("Cleaned data uploaded successfully.")
 
     except pd.errors.EmptyDataError:

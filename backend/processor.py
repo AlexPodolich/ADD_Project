@@ -22,7 +22,6 @@ def send_to_uploader(file_path):
             )
             channel = connection.channel()
             
-            # Declare queue with consistent settings
             message = {
                 'action': Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value,
                 'file_path': file_path,
@@ -56,7 +55,6 @@ def send_to_aimodel(file_path):
             
             channel = connection.channel()
 
-            # Declare queue with consistent settings
             message = {
                 'action': Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value,
                 'file_path': file_path,
@@ -89,7 +87,6 @@ def process_message(ch, method, properties, body):
         else:
             print(f"Unknown action: {action}")
 
-        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
@@ -101,7 +98,7 @@ def clean_size(size_str):
         return None
     if isinstance(size_str, (int, float)):
         return size_str
-    # Remove +, M, k, and commas from the string
+
     size = float(size_str.replace('M', '').replace('k', '').replace(',', '').replace('+', ''))
     if 'k' in str(size_str).lower():
         size = size / 1024
@@ -146,22 +143,17 @@ def process_data(file_path):
         df['Type'] = df['Type'].str.strip()
         df['Content Rating'] = df['Content Rating'].str.strip()
 
-        # Convert date
         df['Last Updated'] = pd.to_datetime(df['Last Updated'], format='mixed', errors='coerce')
         df['Last Updated'] = df['Last Updated'].fillna(pd.Timestamp.min)
 
-        # Split genres
         df['Genres'] = df['Genres'].str.split(';')
 
-        # Save cleaned dataset
         output_path = './data/cleaned_google_dataset.csv'
         df.to_csv(output_path, index=False)
         print(f"Cleaned data saved to {output_path}")
 
-        # Send to uploader via RabbitMQ
         send_to_uploader(output_path)
 
-        # Send to aimodel via RabbitMQ
         send_to_aimodel(output_path)
 
     except Exception as e:
@@ -182,14 +174,12 @@ def start_listening():
             
             channel = connection.channel()
 
-            # Declare queue
             channel.queue_declare(
                 queue='process_queue',
                 durable=False,
                 auto_delete=False
             )
 
-            # Set up consumer
             channel.basic_consume(
                 queue=QueueName.PROCESS.value,
                 on_message_callback=process_message

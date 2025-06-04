@@ -18,12 +18,8 @@ logger = logging.getLogger(__name__)
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=dotenv_path)
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000", "http://localhost:6543"]) # Adjust port if needed
+CORS(app, origins=["http://localhost:3000", "http://localhost:6543"])
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'rabbitmq')
-
-def prepare_data(df):
-    """Prepare features and target variables"""
-    pass # prepare_data is no longer needed in aimodel.py
 
 def load_model(model_path=None):
     """Load a trained model from file"""
@@ -73,7 +69,6 @@ def process_message(ch, method, properties, body):
     try:
         message = json.loads(body)
         action = message.get('action')
-        # file_path = message.get('file_path') # file_path is only used for training, which is now separate
 
         print(f"[DEBUG] Received message - Action: {action}")
         if action == Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value:
@@ -81,12 +76,10 @@ def process_message(ch, method, properties, body):
         else:
             print(f"[DEBUG] Unknown action: {action}")
 
-        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
         print(f"[DEBUG] Error processing message: {e}")
-        # Consider whether to acknowledge message in case of error
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 def start_listening():
@@ -103,7 +96,6 @@ def start_listening():
             )
             channel = connection.channel()
 
-            # Set up consumer
             channel.basic_consume(
                 queue=QueueName.AI_MODEL.value,
                 on_message_callback=process_message
@@ -116,6 +108,16 @@ def start_listening():
             print(f"Error starting RabbitMQ listener: {e}")
             raise
 
+@app.route('/', methods=['GET', 'POST'])
+def root():
+    """Handle requests to the root path"""
+    return jsonify({
+        "status": "API is running",
+        "endpoints": {
+            "/predict": "POST - Get predictions for app metrics"
+        }
+    }), 200
+
 @app.route('/predict', methods=['POST'])
 def predictAndSend():
     try:
@@ -125,12 +127,10 @@ def predictAndSend():
         input_data = request.get_json()
         logging.info(f"Received input data: {input_data}")
         
-        # Wczytaj model
         model, feature_columns = load_model()
         if model is None:
             return jsonify({"error": "Model not found"}), 500
         
-        # Walidacja danych wejściowych
         required_fields = ['category', 'app_size', 'app_type', 'price', 'content_rating', 'genres']
         if not all(field in input_data for field in required_fields):
             return jsonify({"error": "Missing required fields"}), 400

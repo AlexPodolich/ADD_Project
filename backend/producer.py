@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import pika
@@ -8,7 +6,6 @@ import time
 from backend.dictionary import QueueName, Action, DataColumn
 import argparse
 
-# File path for the dataset
 from backend.dictionary import FilePath
 CSV_FILE_PATH = FilePath.DATASET.value
 
@@ -20,7 +17,6 @@ def send_data_uploader_processor(file_path):
         )
         channel = connection.channel()
 
-        # Message for uploader
         uploader_message = {
             Action.PRODUCER_UPLOADER_SEND_RAW.name.lower(): Action.PRODUCER_UPLOADER_SEND_RAW.value,
             DataColumn.FILE_PATH.value: file_path
@@ -34,7 +30,6 @@ def send_data_uploader_processor(file_path):
         )
         print("File path sent to uploader queue.")
 
-        # Message for processor
         processor_message = {
             Action.PRODUCER_PROCESSOR_SEND_RAW.name.lower(): Action.PRODUCER_PROCESSOR_SEND_RAW.value,
             DataColumn.FILE_PATH.value: file_path
