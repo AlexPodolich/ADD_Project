@@ -14,7 +14,6 @@ const GENRES = [
   "Brain Games", "Art & Design", "Card", "Video Players & Editors", "Creativity"
 ];
 
-// Define interfaces for input and result data
 interface PredictionInput {
   category: string;
   app_size: string;
@@ -33,7 +32,6 @@ interface PredictionResult extends PredictionInput {
 }
 
 export default function Home() {
-  // State for form inputs
   const [inputData, setInputData] = useState<PredictionInput>({
     category: CATEGORIES[0],
     app_size: '',
@@ -43,41 +41,34 @@ export default function Home() {
     genres: GENRES[0],
   });
 
-  // State for the most recent prediction result
   const [latestPrediction, setLatestPrediction] = useState<PredictionResult | null>(null);
-  // State for the history of predictions
   const [history, setHistory] = useState<PredictionResult[]>([]);
-  // State to track loading status
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  // State for potential errors
   const [error, setError] = useState<string | null>(null);
-  // State for history loading
   const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(true);
 
   const fetchHistory = async () => {
     setIsHistoryLoading(true);
-    setError(null); // Clear previous errors
+    setError(null); 
     try {
-      // Add 1 second delay
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       const { data, error: fetchError } = await supabase
         .from('prediction_history')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(50); // Limit results
+        .limit(50);
 
       if (fetchError) {
         console.error("Supabase fetch error:", fetchError);
         throw new Error(fetchError.message || "Failed to fetch data from Supabase.");
       }
 
-      // Map DB data (snake_case potentially) to frontend state
       const mappedHistory = data?.map(item => ({
           category: item.category,
-          app_size: item.size, // DB `size` -> frontend `app_size`
-          app_type: item.type, // DB `type` -> frontend `app_type`
-          price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0), // Handle potential null price
+          app_size: item.size,
+          app_type: item.type,
+          price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price ?? 0),
           content_rating: item.content_rating,
           genres: item.genres,
           id: item.id,
@@ -97,13 +88,11 @@ export default function Home() {
       setError(`Failed to load prediction history: ${errorMessage}`);
       setHistory([]);
     } finally {
-      // Finish loading
       setIsHistoryLoading(false);
     }
   };
 
   useEffect(() => {
-    // Set up real-time subscription
     const subscription = supabase
         .channel('prediction_changes')
         .on('postgres_changes', 
@@ -113,22 +102,18 @@ export default function Home() {
                 table: 'prediction_history'
             },
             () => {
-                // Fetch fresh data when changes occur
                 fetchHistory();
             }
         )
         .subscribe();
 
-    // Initial fetch
     fetchHistory();
 
-    // Cleanup subscription
     return () => {
         subscription.unsubscribe();
     };
   }, []);
 
-  // Handler for input changes
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
@@ -160,7 +145,6 @@ export default function Home() {
     });
   };
 
-  // Handler for form submission
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
@@ -186,8 +170,6 @@ export default function Home() {
       const predictionResult: PredictionResult = await response.json();
       console.log("Received prediction result from backend:", predictionResult);
 
-      // Fetch fresh history data after prediction
-      // Add 1 second delay before showing prediction and fetching history
       await new Promise(resolve => setTimeout(resolve, 1000));
       const { data: freshHistory, error: fetchError } = await supabase
         .from('prediction_history')
@@ -199,7 +181,6 @@ export default function Home() {
         throw new Error(fetchError.message || "Failed to fetch updated history.");
       }
 
-      // Map fresh history data
       const mappedHistory = freshHistory?.map(item => ({
         category: item.category,
         app_size: item.size,
@@ -224,7 +205,7 @@ export default function Home() {
       console.error("Error during prediction processing:", err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       setError(errorMessage);
-      setLatestPrediction(null); // Clear latest prediction on error
+      setLatestPrediction(null);
     } finally {
       setIsLoading(false);
     }
@@ -348,7 +329,7 @@ export default function Home() {
                 onChange={handleInputChange}
                 min="0"
                 step="0.01"
-                required={inputData.app_type === 'Paid'} // Only required if Paid
+                required={inputData.app_type === 'Paid'}
                 disabled={inputData.app_type === 'Free'}
                 placeholder="0.00"
                 className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out ${inputData.app_type === 'Free' ? 'bg-gray-100 cursor-not-allowed opacity-70' : 'bg-white'} text-gray-900`}
@@ -410,18 +391,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* --- UNCOMMENT History Display --- */}
         <div className="w-full bg-white p-6 md:p-8 rounded-lg shadow-lg">
           <h2 className="text-2xl font-semibold mb-5 text-gray-700 border-b pb-3">Prediction History</h2>
           {isHistoryLoading ? ( 
              <p className="text-gray-500 italic text-center py-4">Loading history...</p>
-          ) : error && history.length === 0 ? ( // Display error only if history failed AND is empty
+          ) : error && history.length === 0 ? (
              <p className="text-red-500 text-center py-4">Error: {error}</p>
           ) : history.length === 0 ? (
             <p className="text-gray-500 italic text-center py-4">No predictions made yet.</p>
           ) : (
             <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-              {/* Ensure item.id is used as key */} 
               {history.map((item) => (
                  <div key={item.id ?? Math.random()} className="bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200">
                    <p className="text-xs text-gray-500 mb-2">{item.created_at ? new Date(item.created_at).toLocaleString() : 'Date unavailable'}</p>
