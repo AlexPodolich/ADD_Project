@@ -2,6 +2,7 @@ from enum import Enum, auto
 
 class FilePath(str, Enum):
     DATASET = './data/google_play_store_dataset.csv'
+    DATASET_CLEANED = './data/google_play_store_dataset_cleaned.csv'
 
 class QueueName(str, Enum):
     PROCESS = "process_queue"

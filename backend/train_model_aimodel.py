@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.ensemble import RandomForestRegressor
+from backend.dictionary import FilePath
 import pickle
 import logging
 
@@ -17,7 +18,7 @@ def prepare_data(df):
     y = df[['Rating', 'Installs', 'Reviews']].copy()
     
     y.loc[:, 'Rating'] = y['Rating'].clip(1.0, 5.0)
-    
+
     X = pd.get_dummies(X, columns=['Category', 'Type', 'Content Rating', 'Genres'])
     
     return X, y
@@ -52,3 +53,14 @@ def train_model(data_path):
     
     print("Training completed!")
     return model, X.columns.tolist()
+
+if __name__ == "__main__":
+    data_path = os.getenv(FilePath.DATASET_CLEANED, '.\data\cleaned_google_dataset.csv')
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Dataset file not found at {data_path}")
+    
+    model, feature_columns = train_model(data_path)
+    
+    print("Model and feature columns saved successfully.")
+    print(f"Model: {model}")
+    print(f"Feature Columns: {feature_columns}")
