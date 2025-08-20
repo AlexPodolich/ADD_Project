@@ -1,25 +1,18 @@
-
-# Enums for string constants used in the ADD project
 from enum import Enum, auto
 
-# File path constants
 class FilePath(str, Enum):
     DATASET = './data/google_play_store_dataset.csv'
+    DATASET_CLEANED = './data/google_play_store_dataset_cleaned.csv'
 
-# Queues used for RabbitMQ communication
 class QueueName(str, Enum):
     PROCESS = "process_queue"
     AI_MODEL = "ai_model_queue"
     UPLOAD = "upload_queue"
 
-# Exchanges for RabbitMQ communication
 class Exchange(str, Enum):
-    # Direct exchange for routing messages is used when the producer and consumer use the same queue and the same routing key
     ADD_DIRECT = "add_direct"
-    #the one with '.name.' syntax
     ADD_TOPIC = "add_topic"
 
-# Action strings for message routing between services
 class Action(str, Enum):
     # Producer to Uploader
     PRODUCER_UPLOADER_SEND_RAW = "producer_uploader_sendRawData"
@@ -32,7 +25,6 @@ class Action(str, Enum):
     # Aimodel to Uploader
     AIMODEL_UPLOADER_UPLOAD_PREDICTION = "aimodel_uploader_uploadprediction"
 
-# Environment variable keys
 class EnvVar(str, Enum):
     RABBITMQ_HOST = "RABBITMQ_HOST"
     DB_USER = "user"
@@ -41,7 +33,6 @@ class EnvVar(str, Enum):
     DB_PORT = "port"
     DB_NAME = "dbname"
 
-# Data column names (for reference, if needed in code)
 class DataColumn(str, Enum):
     # Raw and cleaned data columns (CSV/database)
     APP = "App"
@@ -57,7 +48,7 @@ class DataColumn(str, Enum):
     LAST_UPDATED = "Last Updated"
     CURRENT_VER = "Current Ver"
     ANDROID_VER = "Android Ver"
-    FILE_PATH = "file_path"  # For message keys
+    FILE_PATH = "file_path" 
 
 class DbColumn(str, Enum):
     # Database table columns for raw_apps and cleaned_apps
@@ -86,7 +77,5 @@ class PredictionColumn(str, Enum):
     INSTALLS = "Installs"
     REVIEWS = "Reviews"
 
-# Example usage:
-#   from dictionary import QueueName, Action
-#   queue = QueueName.PROCESS
-#   action = Action.PRODUCER_UPLOADER_SEND_RAW
+class FlaskAPI(str, Enum):
+    FLASK_API_PORT = 5000

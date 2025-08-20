@@ -2,42 +2,76 @@ import pandas as pd
 from datetime import datetime
 import pika
 import json
+import time
 from .dictionary import QueueName, Action
-
+import os
+RABBITMQ_HOST = os.environ.get('RABBITMQ_HOST', 'rabbitmq')
 
 
 def send_to_uploader(file_path):
     """Send cleaned data file path to uploader via RabbitMQ"""
-    try:
-        print("Trying to send message to RabbitMQ...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Trying to send message to RabbitMQ...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
+            channel = connection.channel()
+            
+            message = {
+                'action': Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value,
+                'file_path': file_path,
+                'timestamp': datetime.now().isoformat()
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key=QueueName.UPLOAD.value,
+                body=json.dumps(message)
+            )
+            
+            print("Cleaned data upload command sent")
+            connection.close()
         
-        # Declare queue with consistent settings
-        message = {
-            'action': Action.PROCESSOR_UPLOADER_UPLOAD_CLEANED.value,
-            'file_path': file_path,
-            'timestamp': datetime.now().isoformat()
-        }
-        channel.basic_publish(
-            exchange='',
-            routing_key=QueueName.UPLOAD.value,
-            body=json.dumps(message)
-        )
-        
-        print("Cleaned data upload command sent")
-        connection.close()
-        
-    except Exception as e:
-        print(f"Failed to send message to RabbitMQ: {e}")
-        raise
+        except Exception as e:
+            print(f"Failed to send message to RabbitMQ: {e}")
+            raise
 
+def send_to_aimodel(file_path):
+    """Send cleaned data file path to aimodel via RabbitMQ"""
+    for _ in range(10):
+        try:
+            print("Trying to send message to RabbitMQ for aimodel...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
+            )
+            
+            channel = connection.channel()
+
+            message = {
+                'action': Action.PROCESSOR_AIMODEL_TRAIN_MODEL.value,
+                'file_path': file_path,
+                'timestamp': datetime.now().isoformat()
+            }
+            channel.basic_publish(
+                exchange='',
+                routing_key=QueueName.AI_MODEL.value,
+                body=json.dumps(message)
+            )
+
+            print("Cleaned data training command sent to aimodel")
+            connection.close()
+
+        except Exception as e:
+            print(f"Failed to send message to RabbitMQ for aimodel: {e}")
+            raise
 
 def process_message(ch, method, properties, body):
     """Process received message from RabbitMQ"""
@@ -53,7 +87,6 @@ def process_message(ch, method, properties, body):
         else:
             print(f"Unknown action: {action}")
 
-        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:
@@ -65,7 +98,7 @@ def clean_size(size_str):
         return None
     if isinstance(size_str, (int, float)):
         return size_str
-    # Remove +, M, k, and commas from the string
+
     size = float(size_str.replace('M', '').replace('k', '').replace(',', '').replace('+', ''))
     if 'k' in str(size_str).lower():
         size = size / 1024
@@ -110,58 +143,54 @@ def process_data(file_path):
         df['Type'] = df['Type'].str.strip()
         df['Content Rating'] = df['Content Rating'].str.strip()
 
-        # Convert date
         df['Last Updated'] = pd.to_datetime(df['Last Updated'], format='mixed', errors='coerce')
         df['Last Updated'] = df['Last Updated'].fillna(pd.Timestamp.min)
 
-        # Split genres
         df['Genres'] = df['Genres'].str.split(';')
 
-        # Save cleaned dataset
         output_path = './data/cleaned_google_dataset.csv'
         df.to_csv(output_path, index=False)
         print(f"Cleaned data saved to {output_path}")
 
-        # Send to uploader via RabbitMQ
         send_to_uploader(output_path)
 
-
+        send_to_aimodel(output_path)
 
     except Exception as e:
         print(f"Error processing data: {e}")
 
 def start_listening():
     """Start listening for messages from RabbitMQ"""
-    try:
-        print("Starting RabbitMQ listener...")
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host='localhost',
-                heartbeat=600,
-                blocked_connection_timeout=300
+    for _ in range(10):
+        try:
+            print("Starting RabbitMQ listener...")
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(
+                    host=RABBITMQ_HOST,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
             )
-        )
-        channel = connection.channel()
+            
+            channel = connection.channel()
 
-        # Declare queue
-        channel.queue_declare(
-            queue='process_queue',
-            durable=False,
-            auto_delete=False
-        )
+            channel.queue_declare(
+                queue='process_queue',
+                durable=False,
+                auto_delete=False
+            )
 
-        # Set up consumer
-        channel.basic_consume(
-            queue=QueueName.PROCESS.value,
-            on_message_callback=process_message
-        )
+            channel.basic_consume(
+                queue=QueueName.PROCESS.value,
+                on_message_callback=process_message
+            )
 
-        print("Waiting for messages...")
-        channel.start_consuming()
+            print("Waiting for messages...")
+            channel.start_consuming()
 
-    except Exception as e:
-        print(f"Error starting RabbitMQ listener: {e}")
-        raise
+        except Exception as e:
+            print(f"Error starting RabbitMQ listener: {e}")
+            raise
 
 if __name__ == "__main__":
     start_listening()
